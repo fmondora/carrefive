@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% import "widget.html" as W %}
+{% block titolo %}I tuoi turni — Le Rocce{% endblock %}
+
+{% block corpo %}
+<main class="guscio">
+  {# Guscio (`02` §4.2): chi sono, i miei turni, lo stato del ciclo se manager,
+     l'ingresso del copilota. Niente griglia 30×7 qui dentro. #}
+  <header class="testata">
+    <h1>{{ persona.nome }}</h1>
+    <span class="pv">{{ persona.punto_vendita }} · <a href="/logout">esci</a></span>
+  </header>
+
+  {% if ciclo %}
+    <section class="card" data-tipo="stato-ciclo">
+      <div class="etichetta">Settimana {{ ciclo.settimana }}</div>
+      {% if ciclo.job and ciclo.job.stato in ("in_coda", "in_corso") %}
+        <p class="job"><i class="punto"></i> Bozza in preparazione · {{ ciclo.job.elapsed }}s</p>
+      {% elif ciclo.job and ciclo.job.stato == "fallito" %}
+        <p class="job job--fallito"><i class="punto"></i> Bozza non riuscita: {{ ciclo.job.errore }}</p>
+      {% else %}
+        <p>Stato: {{ ciclo.stato|replace("_", " ") }}</p>
+      {% endif %}
+      {% if ciclo.errore %}<p class="errore">{{ ciclo.errore }}</p>{% endif %}
+      <div class="chip-riga">
+        {% for c in ciclo.chip %}
+          <form method="post" action="/chip/{{ c }}" style="display:inline">
+            <button class="chip {% if c == 'pubblica' %}chip--primaria{% endif %}">{{ c|replace("-", " ") }}</button>
+          </form>
+        {% endfor %}
+        {% if attivatore %}<a class="chip" href="/attivatore">non ancora entrate</a>{% endif %}
+      </div>
+    </section>
+  {% endif %}
+
+  {# Slot fisso: i miei turni + i miei saldi. Sempre, anche col copilota chiuso. #}
+  {{ W.person_shifts(turni, mio=True) }}
+  {{ W.person_balances(saldi) }}
+
+  {% for w in widget %}{{ W.render(w) }}{% endfor %}
+</main>
+
+<div class="composer" data-spento="{{ 1 if copilota_spento else 0 }}">
+  <form method="post" action="/copilota">
+    <input name="testo" placeholder="{{ 'Copilota non disponibile' if copilota_spento else 'Scrivi al copilota…' }}"
+           {% if copilota_spento %}disabled{% endif %} autocomplete="off">
+    <button class="chip chip--primaria" {% if copilota_spento %}disabled{% endif %}>invia</button>
+  </form>
+</div>
+{% endblock %}

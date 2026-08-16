@@ -1,0 +1,249 @@
+/* Superfici (`06` §4.4). Mobile-first: il telefono in corsia è il caso normale.
+ * Il landing sono due card — turni e saldi. Nessuna griglia 30×7 nel guscio.
+ */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--carta);
+  color: var(--inchiostro);
+  font-family: var(--font-ui);
+  font-size: var(--testo-ui);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--foglia); }
+
+.guscio {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--s3) var(--s2) 96px;
+}
+
+.guscio--largo { max-width: 1100px; }
+
+/* --- testata ------------------------------------------------------------- */
+
+.testata {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+
+.testata h1 {
+  font-family: var(--font-display);
+  font-size: var(--testo-titolo);
+  font-weight: 600;
+  margin: 0;
+}
+
+.testata .pv,
+.meta {
+  color: var(--inchiostro-muto);
+  font-size: var(--testo-meta);
+}
+
+/* --- card ---------------------------------------------------------------- */
+
+.card {
+  background: var(--carta-alta);
+  border: 1px solid var(--linea);
+  border-radius: var(--raggio-card);
+  padding: var(--s3);
+  box-shadow: var(--ombra);
+  margin-bottom: var(--s2);
+}
+
+.card--bozza { border-color: var(--albicocca); background: var(--albicocca-acqua); }
+.card--blocco { border-color: var(--rosso-blocco); }
+.card--gap { border-color: var(--ambra-gap); }
+
+.card h2 {
+  font-family: var(--font-display);
+  font-size: var(--testo-titolo);
+  font-weight: 600;
+  margin: 0 0 var(--s2);
+}
+
+.etichetta {
+  color: var(--inchiostro-muto);
+  font-size: var(--testo-meta);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 2px;
+}
+
+/* --- person-shifts ------------------------------------------------------- */
+
+.adesso {
+  font-family: var(--font-display);
+  font-size: var(--testo-ora);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  margin: 0 0 var(--s2);
+}
+
+.adesso--in-turno { color: var(--foglia); }
+
+.prossimi { list-style: none; margin: 0; padding: 0; }
+
+.prossimi li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--linea);
+  font-variant-numeric: tabular-nums;
+}
+
+.prossimi li:last-child { border-bottom: none; }
+.prossimi .giorno { width: 3ch; color: var(--inchiostro-muto); }
+.prossimi .orario { min-width: 9ch; }
+.prossimi .mansione { color: var(--inchiostro-muto); font-size: var(--testo-body); }
+.prossimi li.overlay-bozza { background: var(--albicocca-acqua); }
+
+.punto-reparto {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--foglia);
+  margin-right: 6px;
+}
+
+.ore-periodo {
+  margin-top: var(--s2);
+  color: var(--inchiostro-muto);
+  font-size: var(--testo-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- person-balances ----------------------------------------------------- */
+
+.saldi { display: flex; gap: var(--s4); flex-wrap: wrap; }
+.saldo .valore {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.saldo .giorni { color: var(--inchiostro-muto); font-size: var(--testo-meta); }
+.stale { color: var(--albicocca); }
+
+/* --- chip ---------------------------------------------------------------- */
+
+.chip-riga { display: flex; flex-wrap: wrap; gap: var(--s1); margin-top: var(--s2); }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--s2);
+  border-radius: var(--raggio-chip);
+  border: 1px solid var(--linea);
+  background: var(--carta);
+  color: var(--inchiostro);
+  font: inherit;
+  font-size: var(--testo-body);
+  cursor: pointer;
+  transition: background var(--motion), border-color var(--motion);
+}
+
+.chip:hover { border-color: var(--foglia); }
+.chip:focus-visible { outline: 2px solid var(--foglia); outline-offset: 2px; }
+.chip--primaria { background: var(--foglia); border-color: var(--foglia); color: #fff; }
+.chip--attenzione { background: var(--albicocca-acqua); border-color: var(--albicocca); }
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--raggio-chip);
+  background: var(--foglia-acqua);
+  color: var(--foglia);
+  font-size: var(--testo-meta);
+}
+.badge--attenzione { background: var(--albicocca-acqua); color: var(--albicocca); }
+
+/* --- approval card / conferme ------------------------------------------- */
+
+.conferma { border-left: 3px solid var(--foglia); padding-left: var(--s2); }
+.conferma .domanda { font-family: var(--font-display); font-size: var(--testo-titolo); }
+.conferma .toccati { font-size: var(--testo-body); color: var(--inchiostro-muto); }
+
+/* --- rationale / fonti --------------------------------------------------- */
+
+.generata { position: relative; }
+.generata::before {
+  content: "proposta";
+  display: inline-block;
+  font-size: var(--testo-meta);
+  color: var(--inchiostro-muto);
+  border: 1px solid var(--linea);
+  border-radius: var(--raggio-chip);
+  padding: 0 8px;
+  margin-bottom: 6px;
+}
+
+.fonti { font-family: var(--font-mono); font-size: var(--testo-meta); color: var(--inchiostro-muto); }
+.fonti span { margin-right: var(--s1); }
+
+/* --- loader con tempo (Beautiful UI #01) --------------------------------- */
+
+.job { display: flex; align-items: center; gap: var(--s1); font-size: var(--testo-body); }
+.job .punto {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--foglia); animation: pulsa 1.2s infinite ease-in-out;
+}
+@keyframes pulsa { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
+.job--fallito .punto { background: var(--rosso-blocco); animation: none; }
+
+/* --- composer (Beautiful UI #08) ---------------------------------------- */
+
+.composer {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  padding: var(--s2);
+  background: linear-gradient(to top, var(--carta) 70%, transparent);
+}
+.composer form {
+  max-width: 720px; margin: 0 auto;
+  display: flex; gap: var(--s1);
+  background: var(--carta-alta);
+  border: 1px solid var(--linea);
+  border-radius: var(--raggio-chip);
+  padding: 6px 6px 6px var(--s2);
+  box-shadow: var(--ombra);
+}
+.composer input {
+  flex: 1; border: 0; background: transparent; font: inherit; color: inherit;
+  min-height: 44px;
+}
+.composer input:focus { outline: none; }
+.composer[data-spento="1"] { opacity: .7; }
+
+/* --- tabellone (raro) ---------------------------------------------------- */
+
+.week-grid { width: 100%; border-collapse: collapse; font-size: var(--testo-body); }
+.week-grid th, .week-grid td {
+  border: 1px solid var(--linea); padding: 6px 8px; text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.week-grid thead th { background: var(--carta); font-weight: 600; }
+
+/* --- landing ------------------------------------------------------------- */
+
+.landing { max-width: 420px; margin: 12vh auto; padding: 0 var(--s2); }
+.landing h1 { font-family: var(--font-display); font-size: 2rem; margin: 0 0 4px; }
+.landing .campo { display: block; margin-bottom: var(--s2); }
+.landing input[type="text"],
+.landing input[type="email"],
+.landing input[type="password"] {
+  width: 100%; min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--linea); border-radius: var(--raggio-input);
+  background: var(--carta-alta); font: inherit; color: inherit;
+}
+.errore { color: var(--rosso-blocco); font-size: var(--testo-body); }
+.qr { max-width: 240px; }

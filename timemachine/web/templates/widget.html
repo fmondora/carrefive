@@ -1,0 +1,248 @@
+{# Renderer del catalogo (`02` §4.2). Registry chiuso: un tipo che non è qui
+   dentro non viene disegnato — la UI resta invariata (U6/E8). #}
+
+{% macro chip(nome, etichetta=None, classe="", extra="") %}
+  <button class="chip {{ classe }}" name="chip" value="{{ nome }}" {{ extra|safe }}>{{ etichetta or nome|replace("-", " ") }}</button>
+{% endmacro %}
+
+{% macro fonti(lista) %}
+  {% if lista %}<div class="fonti">{% for f in lista[:6] %}<span>{{ f }}</span>{% endfor %}</div>{% endif %}
+{% endmacro %}
+
+{# --- person-shifts ------------------------------------------------------ #}
+{% macro person_shifts(w, mio=False) %}
+<section class="card {% if w.overlay == 'bozza' %}card--bozza{% endif %}" data-tipo="person-shifts" data-persona="{{ w.persona }}">
+  <div class="testata">
+    <h2>{{ w.nome }}</h2>
+    <span class="pv">{{ w.punto_vendita }}</span>
+  </div>
+
+  <div class="etichetta">Adesso</div>
+  {% if w.adesso %}
+    <p class="adesso adesso--in-turno">{{ w.adesso.orario }}{% if w.adesso.mansioni %} · {{ w.adesso.mansioni|join(", ") }}{% endif %}</p>
+  {% else %}
+    <p class="adesso">—</p>
+  {% endif %}
+
+  <div class="etichetta">Prossimi</div>
+  <ul class="prossimi">
+    {% for t in w.prossimi %}
+      <li class="{% if t.overlay == 'bozza' %}overlay-bozza{% endif %}">
+        <span class="giorno">{{ t.giorno }}</span>
+        <span class="orario">{{ t.orario or t.badge }}</span>
+        {% if t.mansioni %}<span class="mansione"><i class="punto-reparto"></i>{{ t.mansioni|join(", ") }}</span>{% endif %}
+        {% if t.note %}<span class="mansione">{{ t.note }}</span>{% endif %}
+      </li>
+    {% else %}
+      <li class="mansione">Nessun turno pubblicato nell'orizzonte.</li>
+    {% endfor %}
+  </ul>
+
+  <p class="ore-periodo">{{ "%g"|format(w.ore_periodo) }}h{% if w.contratto_ore %} su {{ "%g"|format(w.contratto_ore) }}{% endif %}</p>
+
+  {% if w.calendario %}
+    <div class="chip-riga">
+      {% if w.calendario.stato == "collegato" %}
+        <span class="badge">Calendario on · {{ w.calendario.email_mascherata }}</span>
+      {% elif w.calendario.stato == "in-aggiornamento" %}
+        <span class="badge badge--attenzione">In aggiornamento</span>
+      {% elif w.calendario.stato in ("in-errore", "da-ricollegare") %}
+        <span class="badge badge--attenzione">Calendario in errore</span>
+      {% endif %}
+      {% for c in w.calendario.chip %}
+        <form method="post" action="/chip/{{ c }}" style="display:inline">
+          <input type="hidden" name="persona" value="{{ w.persona }}">
+          <button class="chip">{{ c|replace("-", " ") }}</button>
+        </form>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {{ fonti(w.fonti) }}
+</section>
+{% endmacro %}
+
+{# --- person-balances ---------------------------------------------------- #}
+{% macro person_balances(w) %}
+<section class="card" data-tipo="person-balances">
+  {% if w.vuoto %}
+    <div class="etichetta">Ferie e permessi</div>
+    <p>Non ancora caricato.</p>
+    <p class="meta">Arriva dall'import dello studio o da Gamma. Non mostriamo uno zero che non è vero.</p>
+  {% else %}
+    <div class="saldi">
+      {% for v in w.voci %}
+        <div class="saldo">
+          <div class="etichetta">{{ v.etichetta }}</div>
+          <div class="valore">{{ "%g"|format(v.residuo_ore) }} h</div>
+          {% if v.residuo_giorni %}<div class="giorni">≈ {{ "%g"|format(v.residuo_giorni) }} giorni</div>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <p class="meta {% if w.stale %}stale{% endif %}">
+      {{ w.fonte }} · {{ w.aggiornato_at }}{% if w.stale %} · non in tempo reale{% endif %}
+    </p>
+    {% if w.chip %}
+      <div class="chip-riga">
+        {% for c in w.chip %}
+          <form method="post" action="/chip/{{ c }}" style="display:inline">
+            <button class="chip">{{ c|replace("-", " ") }}</button>
+          </form>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+</section>
+{% endmacro %}
+
+{# --- coverage-gap / compliance-block ------------------------------------ #}
+{% macro coverage_gap(w) %}
+<section class="card card--gap" data-tipo="coverage-gap">
+  <h2>Buchi di copertura</h2>
+  <ul class="prossimi">
+    {% for g in w.buchi %}
+      <li><span class="giorno">{{ g.data[8:10] }}/{{ g.data[5:7] }}</span>
+          <span class="orario">{{ g.fascia }}</span>
+          <span class="mansione">{{ g.reparto }} — mancano {{ "%g"|format(g.teste_mancanti) }}</span></li>
+    {% else %}
+      <li class="mansione">Nessun buco.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endmacro %}
+
+{% macro compliance_block(w) %}
+{% if w.violazioni or w.segnalazioni %}
+<section class="card {% if w.violazioni %}card--blocco{% endif %}" data-tipo="compliance-block">
+  <h2>{% if w.violazioni %}Non pubblicabile{% else %}Da guardare{% endif %}</h2>
+  <ul class="prossimi">
+    {% for v in w.violazioni %}
+      <li><span class="orario">{{ v.persona }}</span><span class="mansione">{{ v.dettaglio }}</span></li>
+    {% endfor %}
+    {% for v in w.segnalazioni %}
+      <li><span class="orario">{{ v.persona }}</span><span class="mansione">{{ v.dettaglio }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endmacro %}
+
+{# --- diff-edit / rationale / secondo-note ------------------------------- #}
+{% macro diff_edit(w) %}
+{% if w.righe %}
+<section class="card card--bozza" data-tipo="diff-edit">
+  <div class="etichetta">Cosa cambia per {{ w.persona }}</div>
+  <ul class="prossimi">
+    {% for r in w.righe %}
+      <li><span class="giorno">{{ r.giorno }}</span>
+          <span class="orario">{{ r.prima or "—" }}</span>
+          <span class="mansione">→ {{ r.dopo or "—" }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endmacro %}
+
+{% macro rationale(w) %}
+<section class="card generata" data-tipo="rationale">
+  <p>{{ w.testo }}</p>
+  {% if w.confidenza is not none %}<p class="meta">confidenza {{ "%.0f"|format(w.confidenza * 100) }}%</p>{% endif %}
+  {{ fonti(w.fonti) }}
+</section>
+{% endmacro %}
+
+{% macro secondo_note(w) %}
+{% if w.note %}
+<section class="card" data-tipo="secondo-note">
+  <div class="etichetta">Il negozio sa che…</div>
+  <ul class="prossimi">{% for n in w.note %}<li>{{ n }}</li>{% endfor %}</ul>
+  <div class="fonti"><span>{{ w.fonte }}</span></div>
+</section>
+{% endif %}
+{% endmacro %}
+
+{% macro scheda_preview(w) %}
+<section class="card conferma" data-tipo="scheda-preview">
+  <p class="domanda">Salvo questa preferenza sulla tua scheda?</p>
+  <ul class="prossimi">
+    <li><span class="giorno">vincolo</span><span class="orario">{{ w.vincolo }}</span></li>
+    {% if w.storia %}<li><span class="giorno">storia</span><span class="mansione">«{{ w.storia }}»</span></li>{% endif %}
+  </ul>
+  <p class="meta">{{ w.spiegazione }}</p>
+  <form method="post" action="/chip/salva-preferenza" class="chip-riga">
+    <input type="hidden" name="persona" value="{{ w.persona }}">
+    <input type="hidden" name="vincolo" value="{{ w.vincolo }}">
+    <input type="hidden" name="storia" value="{{ w.storia }}">
+    <button class="chip chip--primaria" name="conferma" value="1">Conferma</button>
+    <button class="chip" name="conferma" value="0">Annulla</button>
+    <button class="chip" name="conferma" value="solo-vincolo">Salva senza la storia</button>
+  </form>
+  <div class="fonti"><span>{{ w.path }}</span></div>
+</section>
+{% endmacro %}
+
+{% macro copilot_turn(w) %}
+<section class="card {% if w.generata %}generata{% endif %}" data-tipo="copilot-turn">
+  {% if w.degradato %}<p class="meta stale">Copilota non disponibile: questa risposta è solo calcolo.</p>{% endif %}
+  <p>{{ w.testo }}</p>
+  {% if w.chip %}
+    <div class="chip-riga">
+      {% for c in w.chip %}
+        <form method="post" action="/chip/{{ c }}" style="display:inline"><button class="chip">{{ c|replace("-", " ") }}</button></form>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+{% endmacro %}
+
+{# --- proposal-pack ------------------------------------------------------ #}
+{% macro proposal_pack(w) %}
+<section class="card" data-tipo="proposal-pack">
+  <h2>Propongo cambi su {{ w.persone|length }} person{{ "a" if w.persone|length == 1 else "e" }}</h2>
+  {% for v in w.varianti %}
+    <p class="meta">{{ v.nome }} — {{ v.rationale }}</p>
+  {% endfor %}
+  {% if w.varianti|length > 1 %}
+    <form method="post" action="/chip/scegli-variante" class="chip-riga">
+      {% for v in w.varianti %}
+        <button class="chip {% if loop.index0 == w.variante_scelta %}chip--primaria{% endif %}" name="indice" value="{{ loop.index0 }}">{{ v.nome }}</button>
+      {% endfor %}
+    </form>
+  {% endif %}
+</section>
+{% for p in w.persone %}{{ person_shifts(p) }}{% endfor %}
+{% for d in w.diff %}{{ diff_edit(d) }}{% endfor %}
+{% endmacro %}
+
+{# --- week-grid: solo da `apri-tabellone` -------------------------------- #}
+{% macro week_grid(w) %}
+<section class="card" data-tipo="week-grid">
+  <h2>Tabellone {{ w.settimana }}</h2>
+  <table class="week-grid">
+    <thead><tr><th>Persona</th>{% for g in w.giorni %}<th>{{ g.etichetta }}</th>{% endfor %}<th>h</th></tr></thead>
+    <tbody>
+      {% for r in w.righe %}
+        <tr><th scope="row">{{ r.nome }}</th>
+          {% for c in r.celle %}<td>{{ c.testo }}</td>{% endfor %}
+          <td>{{ "%g"|format(r.ore) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endmacro %}
+
+{# --- dispatcher: il registry. Tipo sconosciuto → niente. ---------------- #}
+{% macro render(w) %}
+  {% if w and w.tipo == "person-shifts" %}{{ person_shifts(w) }}
+  {% elif w and w.tipo == "person-balances" %}{{ person_balances(w) }}
+  {% elif w and w.tipo == "coverage-gap" %}{{ coverage_gap(w) }}
+  {% elif w and w.tipo == "compliance-block" %}{{ compliance_block(w) }}
+  {% elif w and w.tipo == "proposal-pack" %}{{ proposal_pack(w) }}
+  {% elif w and w.tipo == "rationale" %}{{ rationale(w) }}
+  {% elif w and w.tipo == "diff-edit" %}{{ diff_edit(w) }}
+  {% elif w and w.tipo == "scheda-preview" %}{{ scheda_preview(w) }}
+  {% elif w and w.tipo == "secondo-note" %}{{ secondo_note(w) }}
+  {% elif w and w.tipo == "copilot-turn" %}{{ copilot_turn(w) }}
+  {% elif w and w.tipo == "week-grid" %}{{ week_grid(w) }}
+  {% endif %}
+{% endmacro %}

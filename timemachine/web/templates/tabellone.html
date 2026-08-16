@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% import "widget.html" as W %}
+{% block titolo %}Tabellone — Le Rocce{% endblock %}
+
+{% block corpo %}
+{# Vista rara (`02` §4.1): si apre solo con la chip, e chiuderla riporta alla
+   home persona. Non è uno stato del ciclo, non è il landing. #}
+<main class="guscio guscio--largo">
+  <header class="testata">
+    <h1>Tabellone</h1>
+    <span class="pv"><a href="/home">chiudi</a></span>
+  </header>
+  {% if griglia %}{{ W.week_grid(griglia) }}{% else %}
+    <section class="card"><p>Nessuna settimana pubblicata per questa data.</p></section>
+  {% endif %}
+</main>
+{% endblock %}

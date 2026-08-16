@@ -4,7 +4,37 @@ Sistema agentico + GenUI per i turni di un punto vendita GDO.
 
 Pilota: **Le Rocce**, Poggiridenti. Invariante: **l'AI propone, l'umano dispone, il calcolo è deterministico.**
 
-Questo repo è ancora solo specifiche e knowledge. Non c'è runtime.
+Il runtime implementa le spec `01`–`07`: pacchetto `timemachine/`, superficie web,
+CLI `tm`. Le evals delle spec sono la suite di test.
+
+## Come si prova
+
+```bash
+python3.12 -m pip install -e ".[dev]"
+
+python3.12 -m pytest -q                 # le evals E, U, C, S, G, D, L + i 22 use case
+TM_OGGI=2026-06-29 tm serve             # http://127.0.0.1:8000 — landing, poi la home persona
+```
+
+`TM_OGGI` sposta «oggi» sul lunedì della settimana pubblicata nel pilota, così
+la demo mostra i turni veri di `kb/turni/2026-06-29.md`.
+
+Primo giro a mano:
+
+```bash
+tm ruolo francesco --aggiungi manager attivatore   # Emilio: attiva ed è manager
+tm invita anna-mondora --da francesco --email anna@example.com
+tm bozza --settimana 2026-07-06 --da francesco     # genera, non pubblica
+tm import-saldi --file export-studio.csv --at 2026-08-16
+tm scan --ci                                       # matcher di sicurezza (`05`)
+```
+
+Con `TM_LLM=fake` (default) gli agenti girano **senza rete**: forecast,
+scheduling e compliance sono codice, l'LLM serve solo per la prosa e per
+interpretare le note libere. `TM_LLM=cli|api` accende il modello vero.
+
+Dettaglio: [`docs/architettura.md`](docs/architettura.md) ·
+[`docs/security/README.md`](docs/security/README.md).
 
 ## Cosa stiamo costruendo
 
@@ -37,6 +67,22 @@ Markdown, leggibile da un umano. Tre famiglie:
 - `kb/secondo/` — memoria collettiva del negozio (ancora vuota)
 
 Mappa colori → reparti: `kb/reparti.md`.
+
+## Runtime
+
+| Pezzo | Dove | Nota |
+|---|---|---|
+| Knowledge | `timemachine/kb/` | parser e writer del markdown; il tabellone resta la storia |
+| Dominio | `timemachine/domain/` | turni, ore, saldi, catalogo chiuso, grounding gate |
+| Agenti | `timemachine/agents/` | forecast · scheduling · compliance (zero LLM) · anomaly · copilot · secondo-pv |
+| Orchestratore | `timemachine/orchestrator/` | macchina a stati, contesto con budget, coda job |
+| Adattatori | `timemachine/saldi/`, `timemachine/calendario/`, `timemachine/auth/` | Gamma, Google, identità |
+| Sicurezza | `timemachine/security/` | authz, allowlist di prompt, audit, diritti, matcher |
+| Superficie | `timemachine/vista.py`, `timemachine/web/` | dominio → tipi del catalogo → HTML |
+
+Il confine di fiducia è verificato dal codice: i moduli deterministici non
+importano gli agenti (`tests/test_confine.py`), e solo il gate `pubblica`
+scrive in `kb/turni/`.
 
 ## Come si progetta
 
