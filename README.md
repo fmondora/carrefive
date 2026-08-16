@@ -12,12 +12,16 @@ CLI `tm`. Le evals delle spec sono la suite di test.
 ```bash
 python3.12 -m pip install -e ".[dev]"
 
-python3.12 -m pytest -q                 # le evals E, U, C, S, G, D, L + i 22 use case
-TM_OGGI=2026-06-29 tm serve             # http://127.0.0.1:8000 — landing, poi la home persona
+python3.12 -m pytest -q     # le evals E, U, C, S, G, D, L + i 22 use case
+./demo.sh                   # http://127.0.0.1:8770 — landing, poi la home persona
 ```
 
-`TM_OGGI` sposta «oggi» sul lunedì della settimana pubblicata nel pilota, così
-la demo mostra i turni veri di `kb/turni/2026-06-29.md`.
+`demo.sh` copia `kb/` in una directory usa-e-getta (l'archivio del pilota non si
+tocca), attiva due account — `anna@lerocce.it` e `francesco@lerocce.it`, password
+`settelune2026` — e ferma l'orologio a lunedì 29/06/2026 14:05, che è la
+settimana pubblicata in `kb/turni/`: così «Adesso» è un turno davvero in corso.
+
+Anna è una dipendente, Francesco è manager e attivatore (l'Emilio di `07`).
 
 Primo giro a mano:
 
