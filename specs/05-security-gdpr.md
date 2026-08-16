@@ -53,10 +53,12 @@ Prima del codice, le porte. Ogni nuova spec che ne aggiunge una aggiorna questa 
 
 | Superficie | Ingresso | Dati | Autenticato come |
 |---|---|---|---|
+| Landing / attivazione (`07`) | login, token, OIDC | email, uid, hash/OIDC — mai turni | anonimo → persona |
 | Home `person-shifts` + `person-balances` | lettura | turni propri, saldi propri | la persona |
 | Copilot | NL + tool | contesto assemblato (`01` §4.5) | la persona |
 | `pubblica` / `salva-preferenza` | write | piano PV / scheda propria | manager / persona |
-| OAuth Google (`03`) | redirect | token, `google_sub`, email | solo la persona, su di sé |
+| OAuth Google identità (`07`) | OIDC login | `openid email profile` | persona in attivazione o login |
+| OAuth Google calendario (`03`) | redirect | token calendar, `google_sub` | solo la persona, già dentro |
 | Import saldi file (`04`) | CLI | residui | operatore/studio |
 | Adapter Gamma (`04`) | pull | residui | credenziali di PV, non dell'utente |
 | `week-grid` | lettura rara | piano pubblicato del PV | manager |
@@ -121,7 +123,7 @@ Ogni read ha `caller_id`. Un fetch `/saldi/{altro}` o `/persone/{altro}` senza g
 
 ### 4.6 Security del sistema (oltre il dato)
 
-- **Authn.** Identità per persona (non un login unico del negozio). Il manager è un ruolo, non «chi ha il foglio».
+- **Authn.** Identità per persona (non un login unico del negozio). Invite-only: Emilio attiva, poi uid/pwd o Google (`07`). Il manager è un ruolo, non «chi ha il foglio».
 - **Transport.** TLS; OAuth solo su redirect registrati.
 - **Idempotenza e coda.** Come `01`/`03`: crash ≠ doppio evento, ≠ doppia pubblicazione.
 - **CSRF / clickjacking** sulle chip di write (`pubblica`, `salva-preferenza`, `scollega-google`).
@@ -201,7 +203,7 @@ Estende `01` §5.
 
 - Basi giuridiche puntuali: parere (`00` O1-KR3). Fino ad allora si tratta ogni preferenza come consenso revocabile.
 - DPIA prima del go-live pilota con dati veri oltre le due settimane già in kb.
-- IdP (Google vs email magica vs account insegna) — non blocca la matrice.
+- IdP: chiuso in `07` (uid/pwd + Google dopo attivazione Emilio).
 - Se il pilota vive su un repo condiviso, `kb/persone` in chiaro è un rischio di *repo*: accesso git = autorizzati. Per produzione, kb non è il filesystem del laptop.
 
 **Fuori**

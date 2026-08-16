@@ -32,5 +32,6 @@ Prima di implementare una slice di UI: skill `surface-map` del plugin `ai-native
 | `04-ferie-permessi-gamma.md` | Montante ferie/permessi: file → kb, poi Gamma | AIEngineer (lead), AIUxer su widget |
 | `05-security-gdpr.md` | GDPR su ciò che il dipendente condivide; security sistema; DeepSec | AIEngineer (lead), AIUxer su visibilità |
 | `06-design-system.md` | Tono fresco, token, mappa Beautiful UI → catalogo | AIUxer (lead) |
+| `07-landing-attivazione.md` | Landing, Emilio attiva (mail/QR), uid/pwd o Google | AIUxer + AIEngineer |
 
 Fuori da questa edizione: export paghe, multi-store, secondo personale, payroll interno, Outlook/Apple, richiesta ferie verso Gamma.

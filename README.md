@@ -25,6 +25,7 @@ Si costruisce da qui, non dalla chat. Come si scrive una spec: `specs/README.md`
 | [04 — ferie e permessi](specs/04-ferie-permessi-gamma.md) | Montante in kb (file), poi tempo reale da Gamma |
 | [05 — security e GDPR](specs/05-security-gdpr.md) | Cosa condivide il dipendente; authz; DeepSec |
 | [06 — design system](specs/06-design-system.md) | Beautiful UI + fresco; token; mappa primitive |
+| [07 — landing e attivazione](specs/07-landing-attivazione.md) | Emilio invita (mail/QR); uid/pwd o Google |
 
 ## Knowledge (pilota)
 

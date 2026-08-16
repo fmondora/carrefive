@@ -68,7 +68,7 @@ Perché non invite/RSVP: niente "Accetta/Rifiuta" su un turno di lavoro, niente 
 4. Primo sync: crea il calendario dedicato + upsert di tutti i turni **futuri** già pubblicati (orizzonte = stesso di `person-shifts`, default 14 giorni, e comunque tutta la settimana pubblicata corrente).
 5. `scollega-google`: revoca token, cancella gli eventi *nostri* e (default) il calendario dedicato, toglie il blocco `calendario:` dalla scheda o lo marca `stato: scollegato`. Conferma obbligatoria.
 
-Chi collega: **solo la persona sul proprio account**. Il manager non collega Google al posto di Anna (niente on-behalf in questa spec).
+Chi collega: **solo la persona sul proprio account**. Il manager non collega Google al posto di Anna (niente on-behalf in questa spec). Login Google (`07`) è un altro consenso: identità, non calendario.
 
 ### 4.3 Cosa diventa un evento
 
