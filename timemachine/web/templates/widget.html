@@ -200,7 +200,11 @@
 
 {% macro copilot_turn(w) %}
 <section class="card {% if w.generata %}generata{% endif %}" data-tipo="copilot-turn">
-  {% if w.degradato %}<p class="meta stale">Copilota non disponibile: questa risposta è solo calcolo.</p>{% endif %}
+  {% if w.motivo == "giu" %}
+    <p class="meta stale">Copilota non disponibile: questa risposta è solo calcolo.</p>
+  {% elif w.motivo == "non-configurato" %}
+    <p class="meta">Nessun modello configurato: rispondo con i dati calcolati.</p>
+  {% endif %}
   <p>{{ w.testo }}</p>
   {% if w.chip %}
     <div class="chip-riga">

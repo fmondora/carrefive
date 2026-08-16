@@ -1,7 +1,12 @@
 """Backend AI astratto (`01` §3).
 
-`fake` in test, `cli` in dev, `api` in prod. Il resto del sistema non sa quale
-gira: vede `genera(prompt, schema)` e riceve un dict già validato.
+Senza `TM_LLM` il backend si sceglie da solo: la **chiave** se ce n'è una che
+l'SDK sappia risolvere (env o profilo `ant auth login` — la stessa catena che
+usa Claude Code), altrimenti la **CLI** `claude -p` locale, altrimenti niente
+modello. `TM_LLM=fake|cli|api` forza la scelta; i test usano `fake`.
+
+Il resto del sistema non sa quale gira: vede `genera(prompt, schema)` e riceve
+un dict già validato.
 
 Due regole non negoziabili:
 
@@ -15,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
@@ -22,6 +28,15 @@ from typing import Any, Callable, Protocol
 
 class LLMGiu(Exception):
     """Il backend non risponde. Il path deterministico non ne risente."""
+
+
+class LLMNonConfigurato(LLMGiu):
+    """Non c'è nessun backend da chiamare: manca la chiave, il comando, la config.
+
+    È un caso diverso da «è giù»: il sistema funziona come previsto, solo senza
+    la parte di linguaggio. Dirlo con le stesse parole di un guasto spaventa
+    per niente — e nasconde un guasto vero quando capita davvero.
+    """
 
 
 class SchemaNonRispettato(Exception):
@@ -100,15 +115,27 @@ class BackendFake:
         if self.risposte:
             r = self.risposte.pop(0)
             return r if isinstance(r, str) else json.dumps(r)
-        raise LLMGiu("nessuna risposta scriptata per questo prompt")
+        raise LLMNonConfigurato("nessuna risposta scriptata: backend fake senza copione")
+
+
+def _comando_cli() -> list[str]:
+    """`TM_LLM_CLI` sovrascrive il comando (utile per scegliere un modello).
+
+    Misurato su questa macchina: `claude -p` risponde in ~38 s a una richiesta
+    del Copilot. Va bene per provare, è troppo per un composer sincrono — chi
+    sviluppa a lungo può puntarlo a un modello più rapido, ma è una scelta sua:
+    `TM_LLM_CLI="claude -p --model haiku"`.
+    """
+    grezzo = os.environ.get("TM_LLM_CLI", "").strip()
+    return grezzo.split() if grezzo else ["claude", "-p"]
 
 
 @dataclass(slots=True)
 class BackendCLI:
     """Dev: un coding agent locale in subprocess (`claude -p`, o simili)."""
 
-    comando: list[str] = field(default_factory=lambda: ["claude", "-p"])
-    timeout: float = 90.0
+    comando: list[str] = field(default_factory=_comando_cli)
+    timeout: float = 120.0
     nome: str = "cli"
 
     def genera(self, prompt: str, sistema: str = "") -> str:
@@ -122,6 +149,8 @@ class BackendCLI:
                 timeout=self.timeout,
                 check=False,
             )
+        except FileNotFoundError as e:
+            raise LLMNonConfigurato(f"comando {self.comando[0]!r} non trovato") from e
         except (OSError, subprocess.TimeoutExpired) as e:
             raise LLMGiu(str(e)) from e
         if p.returncode != 0:
@@ -131,44 +160,60 @@ class BackendCLI:
 
 @dataclass(slots=True)
 class BackendAPI:
-    """Prod: Messages API. La chiave sta in env, **mai** in config o in kb."""
+    """Prod: Messages API tramite l'**SDK ufficiale** `anthropic`.
 
-    modello: str = "claude-sonnet-5"
-    env_chiave: str = "ANTHROPIC_API_KEY"
-    base_url: str = "https://api.anthropic.com/v1/messages"
-    max_tokens: int = 4096
-    timeout: float = 60.0
+    Credenziali: il client a zero argomenti risolve da solo la catena
+    `ANTHROPIC_API_KEY` → `ANTHROPIC_AUTH_TOKEN` → profilo OAuth di
+    `ant auth login` → federazione → profilo di default. Quindi *non* si legge
+    la chiave a mano e non la si passa in giro: nessun segreto attraversa il
+    nostro codice (`05` §4.5).
+
+    Effort basso di default: qui l'LLM scrive due righe di prosa o ordina tre
+    candidati — non deve ragionare a lungo (`01` §3, costo).
+    """
+
+    modello: str = field(default_factory=lambda: os.environ.get("TM_MODELLO", "claude-opus-5"))
+    effort: str = field(default_factory=lambda: os.environ.get("TM_EFFORT", "low"))
+    max_tokens: int = 8192
     nome: str = "api"
+    _client: Any = None
+
+    def _apri(self) -> Any:
+        if self._client is None:
+            try:
+                import anthropic
+            except ImportError as e:  # pragma: no cover - dipendenza dichiarata
+                raise LLMNonConfigurato("SDK `anthropic` non installato") from e
+            try:
+                self._client = anthropic.Anthropic()
+            except Exception as e:
+                raise LLMNonConfigurato(f"nessuna credenziale Anthropic risolvibile: {e}") from e
+        return self._client
 
     def genera(self, prompt: str, sistema: str = "") -> str:
-        import httpx
+        import anthropic
 
-        chiave = os.environ.get(self.env_chiave, "")
-        if not chiave:
-            raise LLMGiu(f"{self.env_chiave} non impostata")
+        client = self._apri()
         corpo: dict[str, Any] = {
             "model": self.modello,
             "max_tokens": self.max_tokens,
+            "output_config": {"effort": self.effort},
             "messages": [{"role": "user", "content": prompt}],
         }
         if sistema:
             corpo["system"] = sistema
         try:
-            r = httpx.post(
-                self.base_url,
-                json=corpo,
-                headers={
-                    "x-api-key": chiave,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                timeout=self.timeout,
-            )
-            r.raise_for_status()
-            dati = r.json()
-        except Exception as e:
+            risposta = client.messages.create(**corpo)
+        except anthropic.AuthenticationError as e:
+            raise LLMNonConfigurato(f"credenziali rifiutate: {e}") from e
+        except anthropic.APIStatusError as e:
+            raise LLMGiu(f"{e.status_code}: {str(e)[:200]}") from e
+        except anthropic.APIConnectionError as e:
             raise LLMGiu(str(e)) from e
-        return "".join(b.get("text", "") for b in dati.get("content", []))
+        if risposta.stop_reason == "refusal":
+            # rifiuto del modello: è un esito, non un guasto — si scarta pulito
+            raise SchemaNonRispettato("il modello ha rifiutato la richiesta")
+        return "".join(b.text for b in risposta.content if b.type == "text")
 
 
 # --- confine: qui si valida --------------------------------------------------
@@ -213,13 +258,48 @@ _costruttori: dict[str, Callable[[], Backend]] = {
     "api": lambda: BackendAPI(),
 }
 
+
+def _credenziale_api() -> bool:
+    """C'è una credenziale Anthropic che l'SDK sappia risolvere?
+
+    Non basta guardare `ANTHROPIC_API_KEY`: la catena dell'SDK include anche
+    `ANTHROPIC_AUTH_TOKEN` e il profilo OAuth di `ant auth login` — quello che
+    usa anche Claude Code. Una chiave assente **non** significa «niente
+    credenziali», quindi si chiede a `ant` invece di dedurlo.
+    """
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        return True
+    if shutil.which("ant") is None:
+        return False
+    try:
+        p = subprocess.run(
+            ["ant", "auth", "status"], capture_output=True, text=True, timeout=5, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return p.returncode == 0 and "no active" not in p.stdout.lower()
+
+
+def scelta_automatica() -> str:
+    """La chiave se c'è, altrimenti la CLI locale, altrimenti niente modello.
+
+    In sviluppo su una macchina già autenticata con Claude Code la CLI c'è
+    quasi sempre: è il motivo per cui viene prima di `fake`.
+    """
+    if _credenziale_api():
+        return "api"
+    if shutil.which(BackendCLI().comando[0]):
+        return "cli"
+    return "fake"
+
+
 _llm: LLM | None = None
 
 
 def llm() -> LLM:
     global _llm
     if _llm is None:
-        scelta = os.environ.get("TM_LLM", "fake").lower()
+        scelta = (os.environ.get("TM_LLM") or "").lower() or scelta_automatica()
         _llm = LLM(backend=_costruttori.get(scelta, _costruttori["fake"])())
     return _llm
 

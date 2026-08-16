@@ -233,9 +233,14 @@ def copilot_turn(
     testo: str,
     chip: list[str] | None = None,
     widget: list[dict] | None = None,
-    degradato: bool = False,
+    motivo: str = "",
 ) -> dict[str, Any]:
-    """`degradato` = il backend è giù: la risposta è solo calcolo, e si dice (P-D)."""
+    """`motivo` dice *perché* manca la prosa (P-D):
+
+    - `""` → il modello ha risposto, il testo è generato;
+    - `"non-configurato"` → nessun backend: risposta di solo calcolo;
+    - `"giu"` → c'era un backend e non risponde. Questo è un guasto.
+    """
     chip_ok, _ = catalogo.filtra_chip(chip or [])
     widget_ok, scartati = catalogo.filtra_widget(widget or [])
     return {
@@ -244,8 +249,9 @@ def copilot_turn(
         "chip": chip_ok,
         "widget": widget_ok,
         "scartati": scartati,
-        "generata": not degradato,
-        "degradato": degradato,
+        "generata": not motivo,
+        "degradato": bool(motivo),
+        "motivo": motivo,
     }
 
 

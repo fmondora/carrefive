@@ -22,7 +22,7 @@ from ..orchestrator.contesto import Contesto
 from ..security import allowlist
 from ..security.authz import Attore, Negato
 from .base import consult, registra
-from .llm import LLMGiu, SchemaNonRispettato, llm
+from .llm import LLMGiu, LLMNonConfigurato, SchemaNonRispettato, llm
 
 SCHEMA_TURNO = {
     "type": "object",
@@ -38,6 +38,8 @@ RIFIUTO_ALTRUI = (
     "Se ti serve per pianificare, aprilo dalla bozza che la tocca."
 )
 COPILOTA_GIU = "Copilota non disponibile. I tuoi turni pubblicati e i saldi restano a schermo."
+#: nessun modello configurato: il sistema fa quello che deve, senza la prosa
+COPILOTA_ASSENTE = "Copilota non configurato: rispondo solo con i dati calcolati."
 
 
 @dataclass(slots=True)
@@ -46,7 +48,14 @@ class Risposta:
     widget: list[dict[str, Any]] = field(default_factory=list)
     proposta: Proposta | None = None
     comando: str = ""
-    degradato: bool = False  # il backend è giù: i fatti restano, la prosa no
+    degradato: bool = False  # niente prosa: i fatti restano
+    motivo: str = ""  # "giu" | "non-configurato" | ""
+
+    @property
+    def spento(self) -> bool:
+        """Solo un guasto spegne il composer (`06` §4.5). La mancanza di
+        configurazione no: le risposte deterministiche funzionano."""
+        return self.motivo == "giu"
 
     def come_dict(self) -> dict[str, Any]:
         return {
@@ -54,6 +63,7 @@ class Risposta:
             "widget": self.widget,
             "comando": self.comando,
             "degradato": self.degradato,
+            "motivo": self.motivo,
             "proposta": self.proposta.come_dict() if self.proposta else None,
         }
 
@@ -96,7 +106,7 @@ class Copilot:
 
     # --- copy ----------------------------------------------------------------
 
-    def _copy(self, domanda: str, fatti: str, chip: list[str]) -> tuple[str, list[str], bool]:
+    def _copy(self, domanda: str, fatti: str, chip: list[str]) -> tuple[str, list[str], str]:
         """Il testo lo può scrivere il modello; i **numeri** no: arrivano già fatti."""
         try:
             dati, _ = llm().genera_json(
@@ -110,11 +120,13 @@ class Copilot:
                 schema=SCHEMA_TURNO,
                 sistema="copilot: unico agente che parla con l'umano. Solo JSON.",
             )
+        except LLMNonConfigurato:
+            return fatti, chip, "non-configurato"
         except (LLMGiu, SchemaNonRispettato):
             # degrado onesto: i fatti restano, la prosa no — e si dice
-            return fatti, chip, True
+            return fatti, chip, "giu"
         proposte = [c for c in dati.get("chip", []) if c in chip]
-        return str(dati.get("testo") or fatti), proposte or chip, False
+        return str(dati.get("testo") or fatti), proposte or chip, ""
 
     # --- ingresso ------------------------------------------------------------
 
@@ -134,9 +146,11 @@ class Copilot:
         if comando:
             fatti = f"Comando riconosciuto: {comando}. Lo esegui tu con la chip."
             chip = [comando]
-            testo_copy, chip_copy, giu = self._copy(domanda, fatti, chip)
-            turno = vista.copilot_turn(testo_copy, chip_copy, degradato=giu)
-            return Risposta(turno=turno, widget=widget, comando=comando, degradato=giu)
+            testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
+            turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+            return Risposta(
+                turno=turno, widget=widget, comando=comando, degradato=bool(motivo), motivo=motivo
+            )
 
         # 2. preferenza («giovedì pomeriggio ho pianoforte»)
         if self._è_preferenza(basso):
@@ -147,9 +161,9 @@ class Copilot:
                 "Non ho scritto niente: conferma tu."
             )
             chip = ["salva-preferenza"]
-            testo_copy, chip_copy, giu = self._copy(domanda, fatti, chip)
-            turno = vista.copilot_turn(testo_copy, chip_copy, degradato=giu)
-            return Risposta(turno=turno, widget=widget, degradato=giu)
+            testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
+            turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+            return Risposta(turno=turno, widget=widget, degradato=bool(motivo), motivo=motivo)
 
         # 3. saldi
         if re.search(r"\b(ferie|permess|residuo|montante|rol)\b", basso):
@@ -169,9 +183,9 @@ class Copilot:
                 )
                 stale = " (non in tempo reale)" if saldi.get("stale") else ""
                 fatti = f"{voci}{stale}. Fonte: {saldi['fonte']}, aggiornato {saldi['aggiornato_at']}."
-            testo_copy, chip_copy, giu = self._copy(domanda, fatti, chip)
-            turno = vista.copilot_turn(testo_copy, chip_copy, degradato=giu)
-            return Risposta(turno=turno, widget=widget, degradato=giu)
+            testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
+            turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+            return Risposta(turno=turno, widget=widget, degradato=bool(motivo), motivo=motivo)
 
         # 4. turni
         if re.search(r"\b(turn|quando lavor|orario|domani|oggi|settimana)\b", basso):
@@ -184,9 +198,9 @@ class Copilot:
             fatti = (
                 f"Adesso: {adesso['orario']}." if adesso else "Adesso non sei in turno."
             ) + f" Prossimi {len(turni['prossimi'])} turni, {turni['ore_periodo']:g}h nel periodo."
-            testo_copy, chip_copy, giu = self._copy(domanda, fatti, chip)
-            turno = vista.copilot_turn(testo_copy, chip_copy, degradato=giu)
-            return Risposta(turno=turno, widget=widget, degradato=giu)
+            testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
+            turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+            return Risposta(turno=turno, widget=widget, degradato=bool(motivo), motivo=motivo)
 
         # 5. consulta di dominio (chi copre…, questo rompe un riposo…)
         if re.search(r"\b(riposo|compliance|viola|ccnl)\b", basso):
@@ -203,9 +217,11 @@ class Copilot:
             except Negato:
                 continue
         fatti = proposta.rationale
-        testo_copy, chip_copy, giu = self._copy(domanda, fatti, chip)
-        turno = vista.copilot_turn(testo_copy, chip_copy, degradato=giu)
-        return Risposta(turno=turno, widget=widget, proposta=proposta, degradato=giu)
+        testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
+        turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+        return Risposta(
+            turno=turno, widget=widget, proposta=proposta, degradato=bool(motivo), motivo=motivo
+        )
 
     # --- riconoscimento ------------------------------------------------------
 
@@ -258,9 +274,11 @@ class Copilot:
 AGENTE = registra(Copilot())
 
 
-def spento() -> dict[str, Any]:
-    """Ciò che si vede quando il backend è giù: onesto, non un finto 200."""
-    return vista.copilot_turn(COPILOTA_GIU, [])
+def spento(motivo: str = "giu") -> dict[str, Any]:
+    """Ciò che si vede quando il backend non risponde: onesto, non un finto 200."""
+    return vista.copilot_turn(
+        COPILOTA_GIU if motivo == "giu" else COPILOTA_ASSENTE, [], motivo=motivo
+    )
 
 
 def oggi() -> dt.date:

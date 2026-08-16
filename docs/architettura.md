@@ -82,13 +82,20 @@ tmp: la knowledge del pilota non è un banco di prova).
 
 | Variabile | Valori | Effetto |
 |---|---|---|
-| `TM_LLM` | `fake` (default) · `cli` · `api` | backend degli agenti (`01` §3) |
+| `TM_LLM` | vuoto = automatico · `fake` · `cli` · `api` | backend degli agenti (`01` §3). Automatico: chiave → CLI `claude -p` → nessun modello |
+| `TM_LLM_CLI` | es. `"claude -p --model haiku"` | comando del backend `cli` |
+| `TM_MODELLO` / `TM_EFFORT` | `claude-opus-5` / `low` | modello e effort del backend `api` |
 | `SALDI_FONTE` | `file` (default) · `gamma` | adapter dei residui (`04` §4.3) |
 | `TM_GOOGLE` | — · `http` | client Calendar finto o reale |
 | `TM_OIDC` | — · `google` | identità finta o reale |
 | `TM_OGGI` | `YYYY-MM-DD` | sposta «oggi» (demo sul pilota 29/06/2026) |
 | `TM_CHIAVE_STORE` | chiave Fernet o passphrase | cifratura dello store segreti |
 | `ANTHROPIC_API_KEY`, `GOOGLE_CLIENT_ID/SECRET`, `GAMMA_TOKEN` | — | **solo** come nome di env, mai in config |
+
+Le credenziali Anthropic non le legge il nostro codice: il client dell'SDK a
+zero argomenti risolve da sé env, profilo OAuth e federazione. Un test lo
+verifica — leggere la chiave a mano romperebbe il caso «autenticato con
+`ant auth login`, nessuna chiave in env».
 
 ## Cosa manca (e lo sa)
 

@@ -33,9 +33,28 @@ tm import-saldi --file export-studio.csv --at 2026-08-16
 tm scan --ci                                       # matcher di sicurezza (`05`)
 ```
 
-Con `TM_LLM=fake` (default) gli agenti girano **senza rete**: forecast,
-scheduling e compliance sono codice, l'LLM serve solo per la prosa e per
-interpretare le note libere. `TM_LLM=cli|api` accende il modello vero.
+### Il copilota
+
+Il backend del modello si sceglie da solo, in quest'ordine:
+
+1. **la chiave**, se l'SDK ne risolve una — `ANTHROPIC_API_KEY`,
+   `ANTHROPIC_AUTH_TOKEN` o il profilo di `ant auth login`, la stessa catena
+   che usa Claude Code. Modello di default `claude-opus-5`.
+2. **la CLI** `claude -p`, se è nel PATH — il caso normale in sviluppo su una
+   macchina già autenticata.
+3. **niente modello**: il sistema funziona lo stesso e lo dice. Forecast,
+   scheduling e compliance sono codice; senza modello si perdono solo la prosa
+   del copilota e l'interpretazione delle note libere della testata.
+
+| Variabile | Effetto |
+|---|---|
+| `TM_LLM=fake\|cli\|api` | forza la scelta (i test usano `fake`: nessuna rete) |
+| `TM_LLM_CLI` | comando della CLI, es. `"claude -p --model haiku"` |
+| `TM_MODELLO`, `TM_EFFORT` | modello e effort del backend `api` |
+
+Una nota di misura: `claude -p` risponde in **~38 s** a una richiesta del
+copilota su questa macchina. Va bene per provare, è troppo per un composer
+sincrono — chi ci lavora a lungo punti `TM_LLM_CLI` a un modello più rapido.
 
 Dettaglio: [`docs/architettura.md`](docs/architettura.md) ·
 [`docs/security/README.md`](docs/security/README.md).

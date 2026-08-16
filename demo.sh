@@ -43,6 +43,8 @@ PYTHON
 
 echo
 echo "TIME MACHINE — Le Rocce · http://127.0.0.1:$PORTA"
+echo "  copilota: ${TM_LLM:-automatico} — senza chiave usa la CLI \`claude -p\` (~38s a risposta)"
+echo "            TM_LLM=fake per una demo istantanea senza modello"
 echo "  oggi = lunedì 29/06/2026, 14:05 (la settimana pubblicata in kb/turni/)"
 echo "  knowledge usa-e-getta in $DEMO"
 echo "  ctrl-c per fermare"

@@ -341,7 +341,8 @@ def copilota(request: Request, testo: str = Form("")):
     try:
         risposta = agente_copilot.AGENTE.rispondi(testo, a, contesto)
         flusso["widget"] = [risposta.turno, *risposta.widget]
-        flusso["copilota_spento"] = risposta.degradato
+        # solo un guasto spegne il composer: senza modello si continua a scrivere
+        flusso["copilota_spento"] = risposta.spento
     except LLMGiu:
         # spento in modo onesto: i widget deterministici restano a schermo
         flusso["widget"] = [agente_copilot.spento()]
