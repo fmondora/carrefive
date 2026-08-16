@@ -342,3 +342,16 @@ def test_password_debole_rifiutata():
         with pytest.raises(PasswordDebole):
             valida(debole, email="anna@example.com")
     valida("settelune2026", email="anna@example.com")
+
+
+def test_il_cookie_di_sessione_e_secure_di_default(client, manager, monkeypatch):
+    """`TM_COOKIE_INSICURO` è un'agevolazione di sviluppo, non il default."""
+    from timemachine.auth import sessioni
+
+    monkeypatch.delenv("TM_COOKIE_INSICURO", raising=False)
+    kw = sessioni.cookie_kwargs()
+    assert kw["secure"] is True and kw["httponly"] is True and kw["samesite"] == "lax"
+
+    monkeypatch.setenv("TM_COOKIE_INSICURO", "1")
+    assert sessioni.cookie_kwargs()["secure"] is False
+    assert sessioni.cookie_kwargs()["httponly"] is True  # questo non si tocca mai

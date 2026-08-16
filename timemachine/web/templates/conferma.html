@@ -16,7 +16,11 @@
         {% endfor %}
       </ul>
     {% endif %}
+    {% if blocco %}
+      <p class="errore">Compliance blocca: finché resta così non potrai pubblicare.</p>
+    {% endif %}
     {% if avvisi %}
+      <div class="etichetta">Da guardare, non blocca</div>
       <ul class="prossimi">
         {% for a in avvisi %}<li class="mansione">{{ a }}</li>{% endfor %}
       </ul>

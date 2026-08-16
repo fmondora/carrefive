@@ -12,10 +12,17 @@
 {# --- person-shifts ------------------------------------------------------ #}
 {% macro person_shifts(w, mio=False) %}
 <section class="card {% if w.overlay == 'bozza' %}card--bozza{% endif %}" data-tipo="person-shifts" data-persona="{{ w.persona }}">
-  <div class="testata">
-    <h2>{{ w.nome }}</h2>
-    <span class="pv">{{ w.punto_vendita }}</span>
-  </div>
+  {# Sul proprio widget il nome è già nel guscio: qui sarebbe un'eco.
+     Sulle persone toccate da una bozza invece serve, è il loro nome. #}
+  {% if not mio %}
+    <div class="testata">
+      <h2>{{ w.nome }}</h2>
+      {% if w.overlay == 'bozza' %}<span class="badge badge--attenzione">bozza</span>{% endif %}
+    </div>
+  {% elif w.overlay == 'bozza' %}
+    {# sul proprio widget il nome è nel guscio, ma l'overlay va detto lo stesso #}
+    <div class="chip-riga"><span class="badge badge--attenzione">proposta in bozza</span></div>
+  {% endif %}
 
   <div class="etichetta">Adesso</div>
   {% if w.adesso %}
@@ -104,7 +111,7 @@
     {% for g in w.buchi %}
       <li><span class="giorno">{{ g.data[8:10] }}/{{ g.data[5:7] }}</span>
           <span class="orario">{{ g.fascia }}</span>
-          <span class="mansione">{{ g.reparto }} — mancano {{ "%g"|format(g.teste_mancanti) }}</span></li>
+          <span class="mansione">{{ g.reparto }} · mancano {{ "%g"|format(g.teste_mancanti) }}</span></li>
     {% else %}
       <li class="mansione">Nessun buco.</li>
     {% endfor %}
@@ -113,17 +120,26 @@
 {% endmacro %}
 
 {% macro compliance_block(w) %}
+{# Blocchi e segnalazioni non si mescolano: i primi tolgono la chip `pubblica`,
+   le seconde sono cose da guardare — confonderle svuota entrambe. #}
 {% if w.violazioni or w.segnalazioni %}
 <section class="card {% if w.violazioni %}card--blocco{% endif %}" data-tipo="compliance-block">
-  <h2>{% if w.violazioni %}Non pubblicabile{% else %}Da guardare{% endif %}</h2>
-  <ul class="prossimi">
-    {% for v in w.violazioni %}
-      <li><span class="orario">{{ v.persona }}</span><span class="mansione">{{ v.dettaglio }}</span></li>
-    {% endfor %}
-    {% for v in w.segnalazioni %}
-      <li><span class="orario">{{ v.persona }}</span><span class="mansione">{{ v.dettaglio }}</span></li>
-    {% endfor %}
-  </ul>
+  {% if w.violazioni %}
+    <h2>Non pubblicabile</h2>
+    <ul class="prossimi">
+      {% for v in w.violazioni %}
+        <li><span class="orario">{{ v.persona }}</span><span class="mansione">{{ v.dettaglio }}</span></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if w.segnalazioni %}
+    <div class="etichetta">Da guardare, non blocca</div>
+    <ul class="prossimi">
+      {% for v in w.segnalazioni %}
+        <li><span class="orario">{{ v.persona }}</span><span class="mansione">{{ v.dettaglio }}</span></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
 </section>
 {% endif %}
 {% endmacro %}
@@ -165,9 +181,9 @@
 {% macro scheda_preview(w) %}
 <section class="card conferma" data-tipo="scheda-preview">
   <p class="domanda">Salvo questa preferenza sulla tua scheda?</p>
-  <ul class="prossimi">
-    <li><span class="giorno">vincolo</span><span class="orario">{{ w.vincolo }}</span></li>
-    {% if w.storia %}<li><span class="giorno">storia</span><span class="mansione">«{{ w.storia }}»</span></li>{% endif %}
+  <ul class="coppie">
+    <li><span class="chiave">vincolo</span><span class="valore">{{ w.vincolo }}</span></li>
+    {% if w.storia %}<li><span class="chiave">storia</span><span class="valore muto">«{{ w.storia }}»</span></li>{% endif %}
   </ul>
   <p class="meta">{{ w.spiegazione }}</p>
   <form method="post" action="/chip/salva-preferenza" class="chip-riga">

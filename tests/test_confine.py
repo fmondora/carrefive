@@ -130,3 +130,23 @@ def test_solo_il_gate_pubblica_scrive_i_turni():
         if "kb_turni.scrivi(" in testo or "turni.scrivi(" in testo:
             chiamanti.append(percorso.relative_to(PACCHETTO).as_posix())
     assert set(chiamanti) <= {"orchestrator/ciclo.py", "kb/turni.py"}, chiamanti
+
+
+def test_lorologio_finto_e_davvero_fermo(monkeypatch):
+    """Regressione: `TM_OGGI` deve pinnare data **e** ora.
+
+    Mescolare una data finta con l'orologio reale rendeva il sync del
+    calendario dipendente dall'ora in cui giravano i test.
+    """
+    import datetime as dt
+
+    from timemachine import tempo
+
+    monkeypatch.setenv("TM_OGGI", "2026-06-29")
+    assert tempo.adesso() == dt.datetime(2026, 6, 29, 0, 0)
+    assert tempo.adesso() == tempo.adesso()
+
+    monkeypatch.setenv("TM_OGGI", "2026-06-29T14:05")
+    assert tempo.adesso() == dt.datetime(2026, 6, 29, 14, 5)
+    assert tempo.oggi() == dt.date(2026, 6, 29)
+    assert tempo.lunedi_di() == dt.date(2026, 6, 29)

@@ -73,9 +73,18 @@ REGISTRO = Registro()
 
 
 def cookie_kwargs() -> dict:
+    """`Secure` di default.
+
+    `TM_COOKIE_INSICURO=1` lo toglie: serve **solo** in sviluppo, perché un
+    client non-browser (curl, httpx, uno script di prova) su `http://` non
+    manda i cookie `Secure` e la sessione sembra sparire. In produzione resta
+    acceso: senza TLS la sessione viaggia in chiaro (`05` §4.5).
+    """
+    import os
+
     return {
         "httponly": True,
-        "secure": True,
+        "secure": os.environ.get("TM_COOKIE_INSICURO", "") not in ("1", "true", "si"),
         "samesite": "lax",
         "max_age": DURATA_ORE * 3600,
         "path": "/",

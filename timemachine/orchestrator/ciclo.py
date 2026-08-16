@@ -257,7 +257,7 @@ class Ciclo:
     def _diff(self) -> list[dict[str, Any]]:
         if self.bozza is None:
             return []
-        pubblicato = kb_turni.leggi(self.settimana)
+        pubblicato = kb_turni.piano_di_riferimento(self.settimana)
         fuori: list[dict[str, Any]] = []
         for slug in self.bozza.persone_toccate(pubblicato):
             for riga in self.bozza.diff(pubblicato, slug):

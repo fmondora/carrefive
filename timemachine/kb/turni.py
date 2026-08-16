@@ -136,6 +136,17 @@ def ultimo_pubblicato(alla_data: dt.date | None = None) -> Piano | None:
     return None
 
 
+def piano_di_riferimento(settimana: dt.date) -> Piano | None:
+    """Contro cosa si confronta una bozza.
+
+    Se quella settimana è già pubblicata, è lei (si sta ripubblicando). Se è
+    nuova, il riferimento è **l'ultima settimana pubblicata**: è quella che il
+    manager ha in testa. Confrontare una settimana nuova col nulla produce un
+    diff in cui «cambiano tutti», cioè nessuna informazione.
+    """
+    return leggi(settimana) or ultimo_pubblicato(settimana - dt.timedelta(days=1))
+
+
 def piani_pubblicati() -> list[Piano]:
     out = []
     for s in settimane_disponibili():

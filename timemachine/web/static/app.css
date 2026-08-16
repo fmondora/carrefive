@@ -59,7 +59,9 @@ a { color: var(--foglia); }
   margin-bottom: var(--s2);
 }
 
-.card--bozza { border-color: var(--albicocca); background: var(--albicocca-acqua); }
+/* `06` §4.4: la bozza è un **bordo** albicocca, non un flash su tutta la card.
+   L'acqua d'albicocca resta alle sole righe che vengono davvero dalla bozza. */
+.card--bozza { border-color: var(--albicocca); border-width: 2px; }
 .card--blocco { border-color: var(--rosso-blocco); }
 .card--gap { border-color: var(--ambra-gap); }
 
@@ -102,10 +104,14 @@ a { color: var(--foglia); }
 }
 
 .prossimi li:last-child { border-bottom: none; }
-.prossimi .giorno { width: 3ch; color: var(--inchiostro-muto); }
+.prossimi .giorno { min-width: 3ch; color: var(--inchiostro-muto); }
 .prossimi .orario { min-width: 9ch; }
 .prossimi .mansione { color: var(--inchiostro-muto); font-size: var(--testo-body); }
-.prossimi li.overlay-bozza { background: var(--albicocca-acqua); }
+.prossimi li.overlay-bozza {
+  background: var(--albicocca-acqua);
+  box-shadow: inset 3px 0 0 var(--albicocca);
+  padding-left: var(--s1);
+}
 
 .punto-reparto {
   display: inline-block;
@@ -166,6 +172,21 @@ a { color: var(--foglia); }
   font-size: var(--testo-meta);
 }
 .badge--attenzione { background: var(--albicocca-acqua); color: var(--albicocca); }
+
+/* Liste chiave→valore (scheda-preview, dettagli): la colonna sinistra si
+   dimensiona sul suo contenuto, non sui 3 caratteri di un giorno. */
+.coppie { list-style: none; margin: var(--s2) 0; padding: 0; }
+.coppie li {
+  display: grid;
+  grid-template-columns: minmax(5rem, max-content) 1fr;
+  gap: var(--s2);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--linea);
+}
+.coppie li:last-child { border-bottom: none; }
+.coppie .chiave { color: var(--inchiostro-muto); font-size: var(--testo-body); }
+.coppie .valore { font-variant-numeric: tabular-nums; }
+.coppie .muto { color: var(--inchiostro-muto); }
 
 /* --- approval card / conferme ------------------------------------------- */
 

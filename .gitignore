@@ -12,5 +12,6 @@ __pycache__/
 # stato applicativo: token cifrati, sessioni, account, log di inferenza.
 # Non è knowledge e non va in git (`05` §4.5).
 .stato/
+.playwright-mcp/
 *.egg-info/
 .pytest_cache/

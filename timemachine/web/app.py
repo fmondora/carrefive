@@ -41,6 +41,20 @@ app = FastAPI(title="TIME MACHINE", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 template = Jinja2Templates(directory=str(BASE / "templates"))
 
+
+def statico(nome: str) -> str:
+    """`/static/app.css?v=<mtime>`.
+
+    In sviluppo evita di guardare per mezz'ora un CSS vecchio che il browser
+    tiene in cache; in produzione permette di cachare a lungo senza bugie.
+    """
+    percorso = BASE / "static" / nome
+    versione = int(percorso.stat().st_mtime) if percorso.exists() else 0
+    return f"/static/{nome}?v={versione}"
+
+
+template.env.globals["statico"] = statico
+
 #: widget iniettati nel flusso della sessione corrente (P-F: non si naviga via)
 _FLUSSO: dict[str, dict[str, Any]] = {}
 
@@ -290,6 +304,15 @@ def home(request: Request):
     note = kb_secondo.retrieval(
         [MESI[_oggi().month - 1], _settimana_corrente().isoformat()], limite=3
     )
+
+    # Una bozza in attesa è **stato del ciclo**, non un messaggio di chat: la
+    # vede il manager anche se l'ha chiesta ieri, da un altro dispositivo o da
+    # un job. Il flusso della sessione resta per il copilota.
+    widget = list(flusso.get("widget", []))
+    if a.manager and ciclo.stato == "attesa_umano" and ciclo.bozza is not None:
+        if not any(w.get("tipo") == "proposal-pack" for w in widget):
+            widget = _widget_bozza(ciclo, a) + widget
+
     return template.TemplateResponse(
         request,
         "home.html",
@@ -302,7 +325,7 @@ def home(request: Request):
             "saldi": vista.person_balances(a.slug, a),
             "ciclo": ciclo.stato_visibile() if a.manager else None,
             "attivatore": a.attivatore,
-            "widget": flusso.get("widget", []),
+            "widget": widget,
             "copilota_spento": flusso.get("copilota_spento", False),
         },
     )
@@ -371,6 +394,7 @@ async def chip(request: Request, nome: str):
                     toccati=_toccati(ciclo),
                     avvisi=_avvisi(ciclo),
                     widget=_widget_bozza(ciclo, a),
+                    blocco=bool(ciclo.bozza and not ciclo.bozza.pubblicabile),
                 )
             ciclo.accetta(a)
             flusso["widget"] = _widget_bozza(ciclo, a)
@@ -482,20 +506,32 @@ def _widget_bozza(ciclo: orchestratore.Ciclo, a: Attore) -> list[dict]:
     return fuori
 
 
+#: quante persone si elencano per esteso nella preview prima di riassumere
+MAX_TOCCATI = 8
+
+
 def _toccati(ciclo: orchestratore.Ciclo) -> list[dict]:
-    """«Chi non è nella stanza» (`05` §4.2): la preview dice chi cambia."""
+    """«Chi non è nella stanza» (`05` §4.2): la preview dice chi cambia.
+
+    Una lista di trenta righe non è una preview, è di nuovo il tabellone: si
+    mostrano i primi e si dice **quante** persone restano, senza nasconderle.
+    """
     if ciclo.bozza is None:
         return []
-    pubblicato = kb_turni.leggi(ciclo.settimana)
+    pubblicato = kb_turni.piano_di_riferimento(ciclo.settimana)
+    toccate = ciclo.bozza.persone_toccate(pubblicato)
     fuori = []
-    for slug in ciclo.bozza.persone_toccate(pubblicato):
+    for slug in toccate[:MAX_TOCCATI]:
         righe = ciclo.bozza.diff(pubblicato, slug)
-        fuori.append(
-            {
-                "persona": slug,
-                "cosa": "; ".join(f"{r['giorno']} {r['prima'] or '—'} → {r['dopo'] or '—'}" for r in righe[:4]),
-            }
+        cosa = "; ".join(
+            f"{r['giorno']} {r['prima'] or '—'} → {r['dopo'] or '—'}" for r in righe[:3]
         )
+        if len(righe) > 3:
+            cosa += f" · e altri {len(righe) - 3} giorni"
+        fuori.append({"persona": slug, "cosa": cosa})
+    resto = len(toccate) - MAX_TOCCATI
+    if resto > 0:
+        fuori.append({"persona": f"e altre {resto} persone", "cosa": "cambi minori"})
     return fuori
 
 
@@ -514,6 +550,7 @@ def _conferma(
     campi: dict[str, str] | None = None,
     widget: list[dict] | None = None,
     conferma_testo: str = "",
+    blocco: bool = False,
 ) -> HTMLResponse:
     return template.TemplateResponse(
         request,
@@ -526,6 +563,7 @@ def _conferma(
             "campi": campi or {},
             "widget": widget or [],
             "conferma_testo": conferma_testo,
+            "blocco": blocco,
         },
     )
 

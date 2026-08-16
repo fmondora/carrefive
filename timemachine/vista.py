@@ -60,34 +60,41 @@ def person_shifts(
 
     # se non c'è nulla nell'orizzonte, si mostra comunque l'ultima settimana
     # pubblicata: con l'AI giù resta l'unica verità (E6/U7).
-    if not turni:
+    # Con una bozza in mano no: lì il confronto è già nel `diff-edit`, e
+    # ripescare la settimana scorsa raddoppierebbe i giorni a schermo.
+    if not turni and bozza is None:
         ultimo = kb_turni.ultimo_pubblicato(oggi)
         if ultimo:
             turni = ultimo.della_persona(slug)
 
     overlay = ""
     diff: list[dict[str, Any]] = []
+    #: solo le righe che vengono davvero dalla bozza si marcano in albicocca:
+    #: un pubblicato dipinto da proposta è la bugia più facile da fare qui.
+    date_bozza: set[dt.date] = set()
     if bozza is not None and slug in bozza.piano.persone():
-        pubblicato = kb_turni.leggi(bozza.settimana)
+        pubblicato = kb_turni.piano_di_riferimento(bozza.settimana)
         righe = bozza.diff(pubblicato, slug)
         if righe:
             overlay = "bozza"
             diff = righe
-            proposti = {t.data: t for t in bozza.piano.della_persona(slug)}
+            proposti = {t.data: t for t in bozza.piano.della_persona(slug) if t.data >= oggi}
             uniti: dict[dt.date, Turno] = {t.data: t for t in turni}
-            uniti.update({d: t for d, t in proposti.items() if d >= oggi})
+            uniti.update(proposti)
             turni = [uniti[d] for d in sorted(uniti)]
+            date_bozza = set(proposti)
 
     adesso = None
     prossimi = []
     ora = adesso_reale().time()
     for turno in turni:
+        segno = "bozza" if turno.data in date_bozza else ""
         if turno.data == oggi and turno.lavorato:
             in_corso = any(s.inizio <= ora <= s.fine for s in turno.spezzoni)
             if in_corso or adesso is None:
-                adesso = _turno_dict(turno, overlay)
+                adesso = _turno_dict(turno, segno)
                 continue
-        prossimi.append(_turno_dict(turno, overlay if turno.data >= oggi else ""))
+        prossimi.append(_turno_dict(turno, segno))
 
     from .calendario import sync as sync_calendario
 
@@ -142,7 +149,7 @@ def person_balances(slug: str, attore: Attore) -> dict[str, Any]:
 
 
 def diff_edit(bozza: Bozza, slug: str) -> dict[str, Any]:
-    pubblicato = kb_turni.leggi(bozza.settimana)
+    pubblicato = kb_turni.piano_di_riferimento(bozza.settimana)
     return {
         "tipo": "diff-edit",
         "persona": slug,
@@ -184,7 +191,7 @@ def compliance_block(violazioni: list[dict], segnalazioni: list[dict] | None = N
 
 def proposal_pack(bozza: Bozza, attore: Attore, oggi: dt.date | None = None) -> dict[str, Any]:
     """1–3 varianti come **insiemi di person-shifts toccati**, non tre Excel."""
-    pubblicato = kb_turni.leggi(bozza.settimana)
+    pubblicato = kb_turni.piano_di_riferimento(bozza.settimana)
     toccate = bozza.persone_toccate(pubblicato)
     return {
         "tipo": "proposal-pack",

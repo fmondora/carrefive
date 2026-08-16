@@ -86,15 +86,27 @@ class Bozza:
     def rationale(self) -> str:
         return self.varianti[self.scelta].rationale
 
+    def _riferimento(self, pubblicato: Piano | None, persona: str, giorno: dt.date) -> Turno | None:
+        """Il turno omologo nel piano di confronto.
+
+        Se il confronto è con un'**altra** settimana (bozza nuova vs ultima
+        pubblicata) si allinea per giorno della settimana, non per data:
+        «il lunedì di prima» è la domanda che si fa un manager.
+        """
+        if pubblicato is None:
+            return None
+        scarto = self.settimana - pubblicato.settimana
+        return pubblicato.turno(persona, giorno - scarto)
+
     def persone_toccate(self, pubblicato: Piano | None) -> list[str]:
-        """Chi cambia rispetto al pubblicato. È l'unità della vista (`02` §4.3)."""
+        """Chi cambia rispetto al riferimento. È l'unità della vista (`02` §4.3)."""
         if pubblicato is None:
             return self.piano.persone()
         toccate = []
         for slug in self.piano.persone():
             for giorno in self.piano.giorni:
                 nuovo = self.piano.turno(slug, giorno)
-                vecchio = pubblicato.turno(slug, giorno)
+                vecchio = self._riferimento(pubblicato, slug, giorno)
                 if _etichetta(nuovo) != _etichetta(vecchio):
                     toccate.append(slug)
                     break
@@ -105,7 +117,7 @@ class Bozza:
         fuori: list[dict] = []
         for giorno in self.piano.giorni:
             nuovo = self.piano.turno(persona, giorno)
-            vecchio = pubblicato.turno(persona, giorno) if pubblicato else None
+            vecchio = self._riferimento(pubblicato, persona, giorno)
             a, b = _etichetta(vecchio), _etichetta(nuovo)
             if a != b:
                 fuori.append(
