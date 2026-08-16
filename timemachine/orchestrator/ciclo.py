@@ -40,11 +40,13 @@ Stato = Literal[
 
 CHIP_PER_STATO: dict[str, tuple[str, ...]] = {
     "idle": ("genera-bozza", "consulta", "apri-tabellone"),
+    # `sposta-turno` non sta qui: una chip nuda non porta con sé persona,
+    # giorno e fascia, e senza bersaglio l'atto non esiste. Vive sulle card
+    # (candidato di un gap, `diff-edit`), dove i campi ci sono (Book 05).
     "attesa_umano": (
         "accetta-bozza",
         "scegli-variante",
         "rifiuta-bozza",
-        "sposta-turno",
         "consulta",
         "apri-tabellone",
     ),

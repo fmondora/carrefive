@@ -47,6 +47,19 @@
 
   <p class="ore-periodo">{{ "%g"|format(w.ore_periodo) }}h{% if w.contratto_ore %} su {{ "%g"|format(w.contratto_ore) }}{% endif %}</p>
 
+  {# candidato per un buco: il bersaglio è già qui, la chip non è mai nuda #}
+  {% if w.sposta %}
+    <form method="post" action="/chip/sposta-turno" class="chip-riga">
+      <input type="hidden" name="persona" value="{{ w.sposta.persona }}">
+      <input type="hidden" name="data" value="{{ w.sposta.data }}">
+      <input type="hidden" name="fascia" value="{{ w.sposta.fascia }}">
+      <button class="chip chip--primaria">{{ ETICHETTE_CHIP["sposta-turno"] }}</button>
+      {% if w.sposta.gia_in_turno %}
+        <span class="badge badge--attenzione">già in turno — confermi lo spostamento</span>
+      {% endif %}
+    </form>
+  {% endif %}
+
   {% if w.calendario %}
     <div class="chip-riga">
       <a class="chip" href="/scheda/{{ w.persona }}">apri scheda</a>
@@ -108,10 +121,19 @@
 <section class="card card--gap" data-tipo="coverage-gap">
   <h2>Buchi di copertura</h2>
   <ul class="prossimi">
+    {# ogni riga è un atto, non una constatazione: porta ai candidati (Book 03) #}
     {% for g in w.buchi %}
-      <li><span class="giorno">{{ g.data[8:10] }}/{{ g.data[5:7] }}</span>
+      <li>
+        <form method="post" action="/chip/consulta" class="riga-atto">
+          <input type="hidden" name="data" value="{{ g.data }}">
+          <input type="hidden" name="fascia" value="{{ g.fascia }}">
+          <input type="hidden" name="reparto" value="{{ g.reparto }}">
+          <span class="giorno">{{ g.data[8:10] }}/{{ g.data[5:7] }}</span>
           <span class="orario">{{ g.fascia }}</span>
-          <span class="mansione">{{ g.reparto }} · mancano {{ "%g"|format(g.teste_mancanti) }}</span></li>
+          <span class="mansione">{{ g.reparto }} · mancano {{ "%g"|format(g.teste_mancanti) }}</span>
+          <button class="chip">Chi può coprirlo</button>
+        </form>
+      </li>
     {% else %}
       <li class="mansione">Nessun buco.</li>
     {% endfor %}
@@ -204,6 +226,8 @@
     <p class="meta stale">Copilota non disponibile: questa risposta è solo calcolo.</p>
   {% elif w.motivo == "non-configurato" %}
     <p class="meta">Nessun modello configurato: rispondo con i dati calcolati.</p>
+  {% elif w.motivo == "schema" %}
+    <p class="meta">La risposta del modello era fuori formato: tengo i dati calcolati.</p>
   {% endif %}
   <p>{{ w.testo }}</p>
   {% if w.chip %}
@@ -223,6 +247,7 @@
   {% for v in w.varianti %}
     <p class="meta">{{ v.nome }} — {{ v.rationale }}</p>
   {% endfor %}
+  {# `scegli-variante` solo se c'è davvero una scelta (Book 03) #}
   {% if w.varianti|length > 1 %}
     <form method="post" action="/chip/scegli-variante" class="chip-riga">
       {% for v in w.varianti %}
@@ -230,6 +255,16 @@
       {% endfor %}
     </form>
   {% endif %}
+  {# le chip del pack erano calcolate in `vista` e mai disegnate #}
+  <div class="chip-riga">
+    {% for c in w.chip %}
+      {% if c != "scegli-variante" %}
+        <form method="post" action="/chip/{{ c }}" style="display:inline">
+          <button class="chip {% if c == 'accetta-bozza' %}chip--primaria{% endif %}">{{ ETICHETTE_CHIP.get(c, c|replace("-", " ")) }}</button>
+        </form>
+      {% endif %}
+    {% endfor %}
+  </div>
 </section>
 {% for p in w.persone %}{{ person_shifts(p) }}{% endfor %}
 {% for d in w.diff %}{{ diff_edit(d) }}{% endfor %}
@@ -237,18 +272,48 @@
 
 {# --- week-grid: solo da `apri-tabellone` -------------------------------- #}
 {% macro week_grid(w) %}
-<section class="card" data-tipo="week-grid">
-  <h2>Tabellone {{ w.settimana }}</h2>
+<section class="card {% if w.bozza %}card--bozza{% endif %}" data-tipo="week-grid">
+  <h2>Tabellone {{ w.settimana }}{% if w.bozza %} <span class="badge badge--attenzione">bozza</span>{% endif %}</h2>
   <table class="week-grid">
     <thead><tr><th>Persona</th>{% for g in w.giorni %}<th>{{ g.etichetta }}</th>{% endfor %}<th>h</th></tr></thead>
     <tbody>
       {% for r in w.righe %}
         <tr><th scope="row">{{ r.nome }}</th>
-          {% for c in r.celle %}<td>{{ c.testo }}</td>{% endfor %}
+          {% for c in r.celle %}<td{% if c.overlay %} class="cella--bozza"{% endif %}>{{ c.testo }}</td>{% endfor %}
           <td>{{ "%g"|format(r.ore) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
+</section>
+{% endmacro %}
+
+{# --- chrome, non catalogo ------------------------------------------------ #}
+{# L'approval usa lo stesso primitive #04 di `scheda-preview`, ma **non** è un
+   tipo: è chrome dello shell come lo stato-ciclo (Book 03 «out of catalog»).
+   Vive sulla home, non su una pagina sua: P-F, non si viene sbalzati via. #}
+{% macro approval(c) %}
+<section class="card conferma" data-chrome="approval">
+  <p class="domanda">{{ c.domanda }}</p>
+  {% if c.blocco %}
+    <p class="errore">Compliance blocca: finché resta così non potrai pubblicare.</p>
+  {% endif %}
+  {% if c.toccati %}
+    <div class="etichetta">Chi è toccato</div>
+    <ul class="prossimi toccati">
+      {% for t in c.toccati %}
+        <li><span class="orario">{{ t.persona }}</span><span class="mansione">{{ t.cosa }}</span></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if c.avvisi %}
+    <div class="etichetta">Da guardare, non blocca</div>
+    <ul class="prossimi">{% for a in c.avvisi %}<li class="mansione">{{ a }}</li>{% endfor %}</ul>
+  {% endif %}
+  <form method="post" action="{{ c.azione }}" class="chip-riga">
+    {% for k, v in c.campi.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <button class="chip chip--primaria" name="conferma" value="1">{{ c.conferma_testo or "Conferma" }}</button>
+    <button class="chip" name="conferma" value="0">Annulla</button>
+  </form>
 </section>
 {% endmacro %}
 

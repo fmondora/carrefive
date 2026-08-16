@@ -49,12 +49,16 @@ class Risposta:
     proposta: Proposta | None = None
     comando: str = ""
     degradato: bool = False  # niente prosa: i fatti restano
-    motivo: str = ""  # "giu" | "non-configurato" | ""
+    motivo: str = ""  # "" | "giu" | "non-configurato" | "schema"
 
     @property
     def spento(self) -> bool:
-        """Solo un guasto spegne il composer (`06` §4.5). La mancanza di
-        configurazione no: le risposte deterministiche funzionano."""
+        """**Solo** un guasto spegne il composer (`06` §4.5).
+
+        Né la mancanza di configurazione né una risposta fuori schema: in
+        entrambi i casi il sistema ha risposto con i fatti calcolati, e chi
+        scrive deve poter scrivere di nuovo.
+        """
         return self.motivo == "giu"
 
     def come_dict(self) -> dict[str, Any]:
@@ -122,7 +126,11 @@ class Copilot:
             )
         except LLMNonConfigurato:
             return fatti, chip, "non-configurato"
-        except (LLMGiu, SchemaNonRispettato):
+        except SchemaNonRispettato:
+            # il modello ha risposto, fuori schema: si scarta la prosa e si
+            # tengono i fatti. Non è un guasto — il composer resta acceso.
+            return fatti, chip, "schema"
+        except LLMGiu:
             # degrado onesto: i fatti restano, la prosa no — e si dice
             return fatti, chip, "giu"
         proposte = [c for c in dati.get("chip", []) if c in chip]

@@ -2,6 +2,36 @@
 {% import "widget.html" as W %}
 {% block titolo %}I tuoi turni — Le Rocce{% endblock %}
 
+{% macro stato_ciclo(ciclo, attivatore) %}
+<section class="card" data-tipo="stato-ciclo">
+  <div class="etichetta">Settimana {{ ciclo.settimana }}</div>
+  {% if ciclo.job and ciclo.job.stato in ("in_coda", "in_corso") %}
+    <p class="job"><i class="punto"></i> Bozza in preparazione · {{ ciclo.job.elapsed }}s</p>
+  {% elif ciclo.job and ciclo.job.stato == "fallito" %}
+    <p class="job job--fallito"><i class="punto"></i> Bozza non riuscita: {{ ciclo.job.errore }}</p>
+  {% else %}
+    <p>Stato: {{ ciclo.stato|replace("_", " ") }}</p>
+  {% endif %}
+  {% if ciclo.errore %}<p class="errore">{{ ciclo.errore }}</p>{% endif %}
+  <div class="chip-riga">
+    {% for c in ciclo.chip %}
+      <form method="post" action="/chip/{{ c }}" style="display:inline">
+        <button class="chip {% if c == 'pubblica' %}chip--primaria{% endif %}">{{ ETICHETTE_CHIP.get(c, c|replace("-", " ")) }}</button>
+      </form>
+    {% endfor %}
+    {% if attivatore %}<a class="chip" href="/attivatore">non ancora entrate</a>{% endif %}
+  </div>
+</section>
+{% endmacro %}
+
+{% macro mie_card(turni, saldi, secondo) %}
+  {# Slot fisso: i miei turni + i miei saldi. Sempre, anche col copilota chiuso.
+     Settimana in corso, mai overlay della bozza della settimana dopo. #}
+  {{ W.person_shifts(turni, mio=True) }}
+  {{ W.person_balances(saldi) }}
+  {% if secondo %}{{ W.secondo_note(secondo) }}{% endif %}
+{% endmacro %}
+
 {% block corpo %}
 <main class="guscio">
   {# Guscio (`02` §4.2): chi sono, i miei turni, lo stato del ciclo se manager,
@@ -11,34 +41,25 @@
     <span class="pv">{{ persona.punto_vendita }} · <a href="/logout">esci</a></span>
   </header>
 
-  {% if ciclo %}
-    <section class="card" data-tipo="stato-ciclo">
-      <div class="etichetta">Settimana {{ ciclo.settimana }}</div>
-      {% if ciclo.job and ciclo.job.stato in ("in_coda", "in_corso") %}
-        <p class="job"><i class="punto"></i> Bozza in preparazione · {{ ciclo.job.elapsed }}s</p>
-      {% elif ciclo.job and ciclo.job.stato == "fallito" %}
-        <p class="job job--fallito"><i class="punto"></i> Bozza non riuscita: {{ ciclo.job.errore }}</p>
-      {% else %}
-        <p>Stato: {{ ciclo.stato|replace("_", " ") }}</p>
-      {% endif %}
-      {% if ciclo.errore %}<p class="errore">{{ ciclo.errore }}</p>{% endif %}
-      <div class="chip-riga">
-        {% for c in ciclo.chip %}
-          <form method="post" action="/chip/{{ c }}" style="display:inline">
-            <button class="chip {% if c == 'pubblica' %}chip--primaria{% endif %}">{{ c|replace("-", " ") }}</button>
-          </form>
-        {% endfor %}
-        {% if attivatore %}<a class="chip" href="/attivatore">non ancora entrate</a>{% endif %}
-      </div>
-    </section>
+  {% set in_attesa = ciclo and ciclo.stato == "attesa_umano" %}
+
+  {% if ciclo %}{{ stato_ciclo(ciclo, attivatore) }}{% endif %}
+
+  {% if in_attesa %}
+    {# Gerarchia della bozza (Book 02): la mano dopo l'occhio, e la casa
+       persona resta — in fondo, ma resta. #}
+    {% if conferma %}{{ W.approval(conferma) }}{% endif %}
+    {% for w in widget if w.tipo == "compliance-block" %}{{ W.render(w) }}{% endfor %}
+    {% for w in widget if w.tipo == "coverage-gap" %}{{ W.render(w) }}{% endfor %}
+    {% if candidati %}{% for w in candidati %}{{ W.render(w) }}{% endfor %}{% endif %}
+    {% for w in widget if w.tipo not in ("compliance-block", "coverage-gap") %}{{ W.render(w) }}{% endfor %}
+    {{ mie_card(turni, saldi, secondo) }}
+  {% else %}
+    {% if conferma %}{{ W.approval(conferma) }}{% endif %}
+    {{ mie_card(turni, saldi, secondo) }}
+    {% if candidati %}{% for w in candidati %}{{ W.render(w) }}{% endfor %}{% endif %}
+    {% for w in widget %}{{ W.render(w) }}{% endfor %}
   {% endif %}
-
-  {# Slot fisso: i miei turni + i miei saldi. Sempre, anche col copilota chiuso. #}
-  {{ W.person_shifts(turni, mio=True) }}
-  {{ W.person_balances(saldi) }}
-  {% if secondo %}{{ W.secondo_note(secondo) }}{% endif %}
-
-  {% for w in widget %}{{ W.render(w) }}{% endfor %}
 </main>
 
 <div class="composer" data-spento="{{ 1 if copilota_spento else 0 }}">

@@ -85,6 +85,7 @@ CHIP_CON_CONFERMA: Final = (
     "rifiuta-bozza",
     "pubblica",
     "scollega-google",
+    "sposta-turno",
 )
 
 #: chip che scrivono. Solo endpoint firmati le eseguono (`05` §4.4)

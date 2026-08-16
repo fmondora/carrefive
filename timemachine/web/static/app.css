@@ -253,6 +253,11 @@ a { color: var(--foglia); }
   font-variant-numeric: tabular-nums;
 }
 .week-grid thead th { background: var(--carta); font-weight: 600; }
+/* cella che la bozza cambia rispetto al pubblicato allineato per weekday */
+.week-grid .cella--bozza {
+  background: var(--albicocca-acqua);
+  box-shadow: inset 2px 0 0 var(--albicocca);
+}
 
 /* --- landing ------------------------------------------------------------- */
 

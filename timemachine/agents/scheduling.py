@@ -33,6 +33,10 @@ from .base import registra
 from .forecast import FASCE, Fabbisogno, previsione, reparto_di
 from .llm import LLMGiu, SchemaNonRispettato, llm
 
+#: quante persone si propongono per un buco. Stesso tetto della preview di
+#: `pubblica`: oltre, una lista smette di essere una scelta.
+MAX_CANDIDATI = 8
+
 SCHEMA_ORDINE = {
     "type": "object",
     "required": ["ordine"],
@@ -121,6 +125,54 @@ def _candidati(piano: Piano, data: dt.date, reparto: str, schede: dict) -> list[
             continue
         fuori.append(slug)
     return fuori
+
+
+def _movibili(
+    piano: Piano, data: dt.date, fascia: str, reparto: str, schede: dict
+) -> list[str]:
+    """Chi quel giorno **è già in turno**, ma in un'altra fascia o reparto.
+
+    Serve perché dopo `genera-bozza` i liberi sui buchi rimasti sono vuoti per
+    costruzione: lo Scheduling ha già assegnato chi poteva, e quel che resta è
+    per definizione senza nessuno libero. Senza questo secondo giro il gesto
+    sarebbe morto sulla demo (Book 08, riga «Layer 2 movibili»).
+
+    Non è una proposta di spostamento: è un elenco di persone su cui il manager
+    *può* decidere. Riposi e ferie restano fuori anche qui.
+    """
+    dalle, alle = _fascia(fascia)
+    fuori = []
+    for slug, persona in schede.items():
+        if not persona.ha_mansione(reparto):
+            continue
+        turno = piano.turno(slug, data)
+        if turno is None or not turno.lavorato:
+            continue  # libero → è già layer 1; R/F/badge → non si toccano
+        gia_li = ore_in_fascia(turno, dalle, alle) > 0.5 and reparto in (
+            reparto_di(list(turno.mansioni) or persona.nomi_mansioni()),
+        )
+        if not gia_li:
+            fuori.append(slug)
+    return fuori
+
+
+def candidati_per_gap(
+    piano: Piano,
+    data: dt.date,
+    fascia: str,
+    reparto: str,
+    schede: dict,
+    tetto: int = MAX_CANDIDATI,
+) -> list[str]:
+    """Chi può coprire questo buco. **Zero LLM, zero rete** (Book 05).
+
+    Due strati, il secondo solo se il primo è vuoto: prima i liberi, poi chi è
+    già in turno altrove quel giorno. Ordine deterministico (meno carico
+    prima), tetto corto: otto card sono già una lista, sedici sono rumore.
+    """
+    liberi = _candidati(piano, data, reparto, schede)
+    scelti = liberi or _movibili(piano, data, fascia, reparto, schede)
+    return _ordine_deterministico(piano, scelti, schede)[:tetto]
 
 
 def _garantisci_riposo(piano: Piano) -> list[str]:

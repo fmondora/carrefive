@@ -31,10 +31,11 @@ from ..calendario import sync as sync_calendario
 from ..domain.modelli import Preferenza
 from ..kb import persone as kb_persone
 from ..kb import turni as kb_turni
+from ..kb.celle import parse_cella
 from ..orchestrator import ciclo as orchestratore
 from ..orchestrator import contesto as ctx
 from ..security import audit
-from ..security.authz import Attore, Negato
+from ..security.authz import Attore, Negato, esigi_manager
 
 BASE = Path(__file__).parent
 app = FastAPI(title="TIME MACHINE", docs_url=None, redoc_url=None)
@@ -54,6 +55,20 @@ def statico(nome: str) -> str:
 
 
 template.env.globals["statico"] = statico
+
+#: copy umana per le sole chip che questa slice tocca (Book 08). Il resto resta
+#: lo slug: meglio uno slug onesto di un'etichetta inventata a metà.
+ETICHETTE_CHIP = {
+    # `consulta` non è qui: nuda nel guscio è un no-op, e chiamarla «chi può
+    # coprirlo» prometterebbe un atto senza bersaglio. L'etichetta vive sulla
+    # riga del gap, dove il buco c'è.
+    "accetta-bozza": "Accetta la bozza",
+    "rifiuta-bozza": "Rifiuta",
+    "pubblica": "Pubblica la settimana",
+    "sposta-turno": "Sposta il turno",
+    "apri-tabellone": "apri tabellone",
+}
+template.env.globals["ETICHETTE_CHIP"] = ETICHETTE_CHIP
 
 #: widget iniettati nel flusso della sessione corrente (P-F: non si naviga via)
 _FLUSSO: dict[str, dict[str, Any]] = {}
@@ -291,6 +306,16 @@ def attiva_google_ritorno(request: Request, code: str = "", state: str = ""):
 
 @app.get("/home", response_class=HTMLResponse)
 def home(request: Request):
+    return _render_home(request)
+
+
+def _render_home(request: Request, status_code: int = 200):
+    """La home è l'unica casa: ci si torna anche dagli errori (Book 05).
+
+    Un input rifiutato è un 400 **su questa pagina**, non un'altra schermata e
+    non un 500: chi ha sbagliato bersaglio deve vedere di nuovo i suoi turni,
+    la bozza e il composer, con una riga che dice cosa manca.
+    """
     a = attore(request)
     if a.anonimo():
         return RedirectResponse("/", status_code=303)
@@ -319,15 +344,19 @@ def home(request: Request):
         {
             "secondo": vista.secondo_note(note) if note else None,
             "persona": persona,
-            "turni": vista.person_shifts(
-                a.slug, a, oggi=_oggi(), bozza=ciclo.bozza if a.manager else None
-            ),
+            # slot fisso: la **mia** settimana in corso, senza overlay della
+            # bozza della settimana dopo (Book 02 «shell vs generative»).
+            # L'overlay vive nel pack e sui candidati, dove è il soggetto.
+            "turni": vista.person_shifts(a.slug, a, oggi=_oggi()),
             "saldi": vista.person_balances(a.slug, a),
             "ciclo": ciclo.stato_visibile() if a.manager else None,
             "attivatore": a.attivatore,
             "widget": widget,
+            "candidati": flusso.get("candidati_gap"),
+            "conferma": flusso.get("conferma"),
             "copilota_spento": flusso.get("copilota_spento", False),
         },
+        status_code=status_code,
     )
 
 
@@ -365,8 +394,30 @@ async def chip(request: Request, nome: str):
     ciclo = _ciclo()
     flusso = _flusso(request)
 
+    # Annulla, una volta sola per tutte le chip: si butta la conferma pendente
+    # e si torna a casa. Rirenderizzare la preview era il modo per restare
+    # incastrati sulla pagina che si stava chiudendo (Book 02, «cosa non
+    # succede più»).
+    if conferma == "0":
+        flusso.pop("conferma", None)
+        return _verso_home()
+
     try:
         if nome == "consulta":
+            # Con un payload di gap è l'atto «chi può coprirlo»: deterministico,
+            # nessun prompt di mezzo. Senza payload resta il no-op di sempre.
+            if dati.get("data") and dati.get("fascia") and dati.get("reparto"):
+                esigi_manager(a, "chip/consulta")
+                candidati, problema = _candidati_del_gap(dati, ciclo, a)
+                if problema:
+                    flusso["widget"] = [vista.copilot_turn(problema, [])]
+                    return _render_home(request, status_code=400)
+                flusso["candidati_gap"] = candidati
+                audit.accesso(
+                    a.slug,
+                    f"gap_consultato/{dati['data']}/{dati['fascia']}/{dati['reparto']}",
+                    f"candidati={sum(1 for c in candidati if c['tipo'] == 'person-shifts')}",
+                )
             return _verso_home()
 
         if nome == "apri-tabellone":
@@ -388,53 +439,88 @@ async def chip(request: Request, nome: str):
 
         if nome == "accetta-bozza":
             if conferma != "1":
-                return _conferma(
-                    request,
+                _apri_conferma(
+                    flusso,
                     domanda="Accetto questa bozza?",
                     azione="/chip/accetta-bozza",
                     toccati=_toccati(ciclo),
                     avvisi=_avvisi(ciclo),
-                    widget=_widget_bozza(ciclo, a),
                     blocco=bool(ciclo.bozza and not ciclo.bozza.pubblicabile),
+                    conferma_testo="Accetta",
                 )
+                return _verso_home()
+            flusso.pop("conferma", None)
             ciclo.accetta(a)
             flusso["widget"] = _widget_bozza(ciclo, a)
             return _verso_home()
 
         if nome == "rifiuta-bozza":
             if conferma != "1":
-                return _conferma(
-                    request,
+                _apri_conferma(
+                    flusso,
                     domanda="Rifiuto la bozza? Il negozio impara dal no.",
                     azione="/chip/rifiuta-bozza",
                     toccati=_toccati(ciclo),
                     conferma_testo="Rifiuta",
                 )
+                return _verso_home()
+            flusso.pop("conferma", None)
             ciclo.rifiuta(a, str(dati.get("motivo", "")))
             flusso["widget"] = []
             return _verso_home()
 
         if nome == "pubblica":
             if conferma != "1":
-                return _conferma(
-                    request,
+                _apri_conferma(
+                    flusso,
                     domanda="Pubblico la settimana?",
                     azione="/chip/pubblica",
                     toccati=_toccati(ciclo),
                     avvisi=_avvisi(ciclo),
                     conferma_testo="Pubblica",
                 )
+                return _verso_home()
+            flusso.pop("conferma", None)
             ciclo.pubblica(a)
             flusso["widget"] = []
             return _verso_home()
 
         if nome == "sposta-turno":
+            esigi_manager(a, "chip/sposta-turno")
+            bersaglio, problema = _bersaglio_sposta(dati, ciclo)
+            if problema:
+                # Manca (o non si legge) il bersaglio: 400 sulla home con una
+                # riga che lo dice. Prima qui si passava `None` a
+                # `date.fromisoformat` e il server cadeva con un 500 (Book 07).
+                flusso["widget"] = [vista.copilot_turn(problema, [])]
+                flusso.pop("conferma", None)
+                return _render_home(request, status_code=400)
+
+            if conferma != "1":
+                nome_persona = kb_persone.leggi(bersaglio["persona"])
+                _apri_conferma(
+                    flusso,
+                    domanda=(
+                        f"Metto {nome_persona.nome if nome_persona else bersaglio['persona']} "
+                        f"{_giorno_esteso(bersaglio['data'])} in {bersaglio['fascia']}?"
+                    ),
+                    azione="/chip/sposta-turno",
+                    campi=bersaglio,
+                    toccati=_toccati(ciclo),
+                    avvisi=_avvisi(ciclo),
+                    blocco=bool(ciclo.bozza and not ciclo.bozza.pubblicabile),
+                    conferma_testo="Sposta",
+                )
+                return _verso_home()
+
             ciclo.sposta_turno(
                 a,
-                persona=str(dati.get("persona", "")),
-                data=dt.date.fromisoformat(str(dati.get("data"))),
-                fascia=str(dati.get("fascia", "")),
+                persona=bersaglio["persona"],
+                data=dt.date.fromisoformat(bersaglio["data"]),
+                fascia=bersaglio["fascia"],
             )
+            flusso.pop("conferma", None)
+            flusso.pop("candidati_gap", None)  # ricalcolati al prossimo tap
             flusso["widget"] = _widget_bozza(ciclo, a)
             return _verso_home()
 
@@ -466,13 +552,15 @@ async def chip(request: Request, nome: str):
         if nome == "scollega-google":
             slug = str(dati.get("persona") or a.slug)
             if conferma != "1":
-                return _conferma(
-                    request,
+                _apri_conferma(
+                    flusso,
                     domanda="Scollego il calendario? Cancello gli eventi che ho creato io.",
                     azione="/chip/scollega-google",
                     campi={"persona": slug},
                     conferma_testo="Scollega",
                 )
+                return _verso_home()
+            flusso.pop("conferma", None)
             scollega(a, slug)
             return _verso_home()
 
@@ -505,6 +593,77 @@ def _widget_bozza(ciclo: orchestratore.Ciclo, a: Attore) -> list[dict]:
         fuori.append(vista.compliance_block(ciclo.bozza.violazioni, ciclo.bozza.segnalazioni))
     fuori.append(vista.rationale(ciclo.bozza.rationale, ciclo.bozza.fonti))
     return fuori
+
+
+GIORNI_ESTESI = ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica")
+
+
+def _giorno_esteso(iso: str) -> str:
+    data = dt.date.fromisoformat(iso)
+    return f"{GIORNI_ESTESI[data.weekday()]} {data.day:02d}/{data.month:02d}"
+
+
+def _candidati_del_gap(
+    dati: dict, ciclo: orchestratore.Ciclo, a: Attore
+) -> tuple[list[dict], str]:
+    """Valida il buco e monta i candidati. Ricalcolati **a ogni tap**.
+
+    Non si cachano sul `Gap`: dopo uno spostamento sarebbero già vecchi, e una
+    lista di persone vecchia è peggio di nessuna lista (Book 05).
+    """
+    from ..agents.forecast import FASCE  # noqa: F401  (usata sotto)
+
+    if ciclo.stato != "attesa_umano" or ciclo.bozza is None:
+        return [], "Non c'è una bozza aperta: nessun buco da coprire."
+    fascia = str(dati.get("fascia") or "")
+    reparto = str(dati.get("reparto") or "")
+    if fascia not in [n for n, _, _ in FASCE]:
+        return [], f"«{fascia}» non è una fascia del punto vendita."
+    try:
+        data = dt.date.fromisoformat(str(dati.get("data")))
+    except ValueError:
+        return [], "Data del buco non valida."
+    if data not in ciclo.bozza.piano.giorni:
+        return [], "Quel giorno è fuori dalla settimana in bozza."
+
+    from ..agents.scheduling import candidati_per_gap
+
+    liberi = candidati_per_gap(
+        ciclo.bozza.piano, data, fascia, reparto, kb_persone.per_slug()
+    )
+    dalle, alle = next((d, al) for n, d, al in FASCE if n == fascia)
+    orario = f"{dalle.hour}-{alle.hour}"
+    return vista.candidati_gap(ciclo.bozza, a, data, fascia, reparto, liberi, orario), ""
+
+
+def _bersaglio_sposta(dati: dict, ciclo: orchestratore.Ciclo) -> tuple[dict, str]:
+    """Valida persona, data e fascia **prima** di toccare il ciclo (Book 05 §validazione).
+
+    Ritorna `(bersaglio, "")` oppure `({}, motivo)`. Il motivo è testo per la
+    persona, non un traceback: è quello che finisce a schermo.
+    """
+    if ciclo.stato != "attesa_umano" or ciclo.bozza is None:
+        return {}, "Non c'è una bozza in attesa da modificare."
+
+    persona = str(dati.get("persona") or "").strip()
+    grezza = str(dati.get("data") or "").strip()
+    fascia = str(dati.get("fascia") or "").strip()
+    if not (persona and grezza and fascia):
+        return {}, "Manca il bersaglio: serve la persona, il giorno e la fascia."
+    if not kb_persone.esiste(persona):
+        return {}, f"«{persona}» non ha una scheda in kb/persone."
+    try:
+        data = dt.date.fromisoformat(grezza)
+    except ValueError:
+        return {}, f"«{grezza}» non è una data valida."
+    if data not in ciclo.bozza.piano.giorni:
+        return {}, f"{grezza} è fuori dalla settimana in bozza."
+
+    spezzoni, badge, _ = parse_cella(fascia)
+    if not spezzoni and not badge:
+        return {}, f"«{fascia}» non è una fascia che so leggere (es. 7-12, 16-20, R)."
+
+    return {"persona": persona, "data": data.isoformat(), "fascia": fascia}, ""
 
 
 #: quante persone si elencano per esteso nella preview prima di riassumere
@@ -542,31 +701,31 @@ def _avvisi(ciclo: orchestratore.Ciclo) -> list[str]:
     return [f"{v['persona']}: {v['dettaglio']}" for v in ciclo.bozza.segnalazioni[:8]]
 
 
-def _conferma(
-    request: Request,
+def _apri_conferma(
+    flusso: dict[str, Any],
     domanda: str,
     azione: str,
     toccati: list[dict] | None = None,
     avvisi: list[str] | None = None,
     campi: dict[str, str] | None = None,
-    widget: list[dict] | None = None,
     conferma_testo: str = "",
     blocco: bool = False,
-) -> HTMLResponse:
-    return template.TemplateResponse(
-        request,
-        "conferma.html",
-        {
-            "domanda": domanda,
-            "azione": azione,
-            "toccati": toccati or [],
-            "avvisi": avvisi or [],
-            "campi": campi or {},
-            "widget": widget or [],
-            "conferma_testo": conferma_testo,
-            "blocco": blocco,
-        },
-    )
+) -> None:
+    """Mette una conferma **in attesa sulla home**, non su un'altra pagina.
+
+    P-F: un atto inietta il prossimo passo nello stesso flusso. Mandare il
+    manager su `/chip/accetta-bozza` come destinazione lo sbalzava fuori casa,
+    e l'Annulla non aveva un posto dove tornare (Book 02, 08).
+    """
+    flusso["conferma"] = {
+        "domanda": domanda,
+        "azione": azione,
+        "toccati": toccati or [],
+        "avvisi": avvisi or [],
+        "campi": campi or {},
+        "conferma_testo": conferma_testo,
+        "blocco": blocco,
+    }
 
 
 # --- tabellone ---------------------------------------------------------------
@@ -614,12 +773,21 @@ def tabellone(request: Request, settimana: str = ""):
         return RedirectResponse("/", status_code=303)
     if not a.manager:
         return JSONResponse({"errore": "il tabellone è del manager"}, status_code=403)
-    giorno = dt.date.fromisoformat(settimana) if settimana else _settimana_corrente()
-    piano = kb_turni.leggi(giorno) or kb_turni.ultimo_pubblicato(giorno)
+    # Se il manager apre il foglio, è quello che sta pianificando — non l'ultima
+    # settimana pubblicata. Il fallback al 29/06 mentre il ciclo è sul 06/07
+    # faceva sembrare vecchia una vista che era solo puntata male (Book 05, 07).
+    ciclo = _ciclo()
+    giorno = dt.date.fromisoformat(settimana) if settimana else ciclo.settimana
+    bozza = ciclo.bozza if (not settimana and ciclo.bozza) else None
+    piano = bozza.piano if bozza else kb_turni.leggi(giorno)
     return template.TemplateResponse(
         request,
         "tabellone.html",
-        {"griglia": vista.week_grid(piano) if piano else None},
+        {
+            "griglia": vista.week_grid(piano, bozza=bozza) if piano else None,
+            "settimana": giorno.isoformat(),
+            "in_bozza": bool(bozza),
+        },
     )
 
 

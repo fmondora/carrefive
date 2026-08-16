@@ -72,17 +72,27 @@ def person_shifts(
     #: solo le righe che vengono davvero dalla bozza si marcano in albicocca:
     #: un pubblicato dipinto da proposta è la bugia più facile da fare qui.
     date_bozza: set[dt.date] = set()
+    #: una bozza che cade fuori dall'orizzonte non ha niente da dire su questa
+    #: vista: dipingere la settimana in corso con la proposta di quella dopo è
+    #: la bugia più comoda (Book 08, «Overlay bozza su me»).
+    if bozza is not None and not (oggi <= bozza.settimana <= fine):
+        bozza = None
     if bozza is not None and slug in bozza.piano.persone():
         pubblicato = kb_turni.piano_di_riferimento(bozza.settimana)
         righe = bozza.diff(pubblicato, slug)
+        # I turni della bozza si mostrano **sempre**, anche a chi la bozza non
+        # tocca: guardando un candidato per un buco si vuole vedere la sua
+        # settimana, non una card vuota che dice «nessun turno» mentre il
+        # rationale dice «è già in turno altrove».
+        proposti = {t.data: t for t in bozza.piano.della_persona(slug) if t.data >= oggi}
+        uniti: dict[dt.date, Turno] = {t.data: t for t in turni}
+        uniti.update(proposti)
+        turni = [uniti[d] for d in sorted(uniti)]
         if righe:
+            # il badge e l'albicocca restano a chi cambia davvero
             overlay = "bozza"
             diff = righe
-            proposti = {t.data: t for t in bozza.piano.della_persona(slug) if t.data >= oggi}
-            uniti: dict[dt.date, Turno] = {t.data: t for t in turni}
-            uniti.update(proposti)
-            turni = [uniti[d] for d in sorted(uniti)]
-            date_bozza = set(proposti)
+            date_bozza = {dt.date.fromisoformat(r["data"]) for r in righe} & set(proposti)
 
     adesso = None
     prossimi = []
@@ -180,6 +190,72 @@ def coverage_gap(gap: list[dict[str, Any]]) -> dict[str, Any]:
     return {"tipo": "coverage-gap", "buchi": gap}
 
 
+def candidati_gap(
+    bozza: Bozza,
+    attore: Attore,
+    data: dt.date,
+    fascia: str,
+    reparto: str,
+    liberi: list[str],
+    orario: str,
+) -> list[dict[str, Any]]:
+    """Dal buco alle persone. **Nessun tipo nuovo**: `rationale` + `person-shifts`.
+
+    Gli slug arrivano già calcolati da `scheduling.candidati_per_gap`: qui si
+    mappa e basta. `vista` non importa `agents/` — è l'invariante verificato da
+    `tests/test_confine.py`, e vale anche quando la funzione chiamata è
+    deterministica.
+
+    La copy è deterministica anche se il tipo è «Gen copy»: qui non c'è niente
+    da interpretare — si contano le persone e si dice quante sono (Book 03).
+    Ogni card porta con sé il bersaglio di `sposta-turno`, così la conferma
+    parte già compilata e non c'è una chip nuda da nessuna parte.
+    """
+    quando = f"{['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'][data.weekday()]} {data.day:02d}/{data.month:02d}"
+    if not liberi:
+        return [
+            rationale(
+                f"Nessuno con la mansione «{reparto}» è libero o spostabile {quando} "
+                f"in fascia {fascia}. I riposi e le ferie non entrano in questa lista: "
+                "un riposo si tocca a mano, ed è una tua decisione.",
+                fonti=[f"kb/turni/{bozza.settimana.isoformat()}.md"],
+            )
+        ]
+
+    #: chi è già in turno quel giorno va etichettato: spostarlo è un secondo
+    #: atto, non un buco da riempire a costo zero
+    in_turno = {
+        slug
+        for slug in liberi
+        if (t := bozza.piano.turno(slug, data)) is not None and t.lavorato
+    }
+    testa = (
+        f"{len(liberi)} con la mansione «{reparto}» {quando}"
+        + (
+            f" — già in turno altrove: {', '.join(sorted(in_turno))}. Spostarli è un cambio, non un buco."
+            if in_turno
+            else ", liberi quel giorno."
+        )
+    )
+    fuori: list[dict[str, Any]] = [
+        rationale(testa, fonti=[f"kb/turni/{bozza.settimana.isoformat()}.md"])
+    ]
+    for slug in liberi:
+        card = person_shifts(slug, attore, oggi=bozza.settimana, bozza=bozza)
+        card["sposta"] = {
+            "persona": slug,
+            "data": data.isoformat(),
+            # l'**orario** (7-12), non il nome della fascia: «pomeriggio» sul
+            # piano diventerebbe un badge da zero ore, non un turno
+            "fascia": orario,
+            "etichetta_fascia": fascia,
+            "reparto": reparto,
+            "gia_in_turno": slug in in_turno,
+        }
+        fuori.append(card)
+    return fuori
+
+
 def compliance_block(violazioni: list[dict], segnalazioni: list[dict] | None = None) -> dict[str, Any]:
     return {
         "tipo": "compliance-block",
@@ -239,6 +315,7 @@ def copilot_turn(
 
     - `""` → il modello ha risposto, il testo è generato;
     - `"non-configurato"` → nessun backend: risposta di solo calcolo;
+    - `"schema"` → ha risposto fuori schema: prosa scartata, fatti tenuti;
     - `"giu"` → c'era un backend e non risponde. Questo è un guasto.
     """
     chip_ok, _ = catalogo.filtra_chip(chip or [])
@@ -255,28 +332,41 @@ def copilot_turn(
     }
 
 
-def week_grid(piano: Piano) -> dict[str, Any]:
-    """Il tabellone. **Non** nel landing, **non** scelto dal Copilot (`02` §4.2)."""
+def week_grid(piano: Piano, bozza: Bozza | None = None) -> dict[str, Any]:
+    """Il tabellone. **Non** nel landing, **non** scelto dal Copilot (`02` §4.2).
+
+    Con una bozza in mano la griglia è quella della bozza, e le celle che
+    cambiano portano un segno: allineate per **giorno della settimana** contro
+    il riferimento pubblicato, che è la domanda che si fa un manager guardando
+    il foglio («il lunedì di prima cosa faceva?»).
+    """
+    riferimento = kb_turni.piano_di_riferimento(bozza.settimana) if bozza else None
+    scarto = (bozza.settimana - riferimento.settimana) if (bozza and riferimento) else None
+
     righe = []
     for slug in piano.persone():
         persona = kb_persone.leggi(slug)
+        celle = []
+        for g in piano.giorni:
+            turno = piano.turno(slug, g)
+            testo = turno.etichetta() if turno else ""
+            cambiata = False
+            if riferimento is not None and scarto is not None:
+                prima = riferimento.turno(slug, g - scarto)
+                cambiata = (prima.etichetta() if prima else "") != testo
+            celle.append({"data": g.isoformat(), "testo": testo, "overlay": cambiata})
         righe.append(
             {
                 "persona": slug,
                 "nome": persona.nome if persona else slug,
                 "contratto": persona.contratto_ore_settimanali if persona else None,
-                "celle": [
-                    {
-                        "data": g.isoformat(),
-                        "testo": (piano.turno(slug, g).etichetta() if piano.turno(slug, g) else ""),
-                    }
-                    for g in piano.giorni
-                ],
+                "celle": celle,
                 "ore": ore_turni(piano.della_persona(slug)),
             }
         )
     return {
         "tipo": "week-grid",
+        "bozza": bool(bozza),
         "settimana": piano.settimana.isoformat(),
         "giorni": [
             {"data": g.isoformat(), "etichetta": f"{['lun','mar','mer','gio','ven','sab','dom'][g.weekday()]} {g.day}"}
