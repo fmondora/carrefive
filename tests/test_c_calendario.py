@@ -239,6 +239,29 @@ def test_il_manager_non_collega_google_al_posto_di_anna(manager, calendario_fint
         collega(manager, "anna-mondora", access_token="t")
 
 
+def test_il_consenso_calendario_e_legato_alla_sessione_che_lo_ha_avviato(
+    client, sessione_di, calendario_finto
+):
+    """Un callback OAuth pescato dai log o indovinato non collega niente."""
+    import re as _re
+
+    sessione_di("anna-mondora")
+    avvio = client.get("/calendario/collega?persona=anna-mondora", follow_redirects=False)
+    state = _re.search(r"state=([A-Za-z0-9_%-]+)", avvio.headers["location"]).group(1)
+    assert "anna-mondora" not in state  # lo slug non viaggia verso Google
+    assert "anna-mondora" not in avvio.headers["location"]
+
+    sessione_di("jessica")  # altra sessione, stesso state
+    r = client.get(f"/calendario/callback?code=x&state={state}")
+    assert r.status_code == 400
+    assert token_store.leggi("anna-mondora") is None
+    assert calendario_finto.calendari == {}
+
+    r = client.get("/calendario/callback?code=x&state=inventato")
+    assert r.status_code == 400
+    assert token_store.leggi("jessica") is None
+
+
 def test_il_passato_non_si_tocca(anna, calendario_finto):
     _collega(anna, calendario_finto)
     eventi = calendario_finto.eventi_di("anna-mondora")

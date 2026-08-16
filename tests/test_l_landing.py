@@ -268,6 +268,54 @@ def test_password_dimenticata_non_crea_persone_e_non_rivela_nulla(client, manage
     assert store.account("anna-mondora").attiva
 
 
+# --- CSRF sui callback OAuth (`05` §4.6) -------------------------------------
+
+
+def test_il_callback_di_login_rifiuta_uno_state_non_nostro(client):
+    """Login CSRF: un callback che nessuno ha iniziato non apre una sessione."""
+    from timemachine.auth import sessioni
+    from timemachine.auth.oidc import IdentitaGoogle, VerificatoreFinto, imposta_verificatore
+
+    imposta_verificatore(
+        VerificatoreFinto({"code-attaccante": IdentitaGoogle(sub="g-x", email="evil@gmail.com")})
+    )
+    r = client.get(
+        "/login/google/callback?code=code-attaccante&state=inventato", follow_redirects=False
+    )
+    assert r.status_code == 400
+    assert sessioni.NOME_COOKIE not in r.cookies
+    assert not sessioni.REGISTRO.sessioni
+
+
+def test_lo_state_e_opaco_a_uso_singolo_e_legato_allo_scopo(client):
+    from timemachine.auth import stato_oauth
+
+    r = client.get("/login/google", follow_redirects=False)
+    state = re.search(r"state=([A-Za-z0-9_%-]+)", r.headers["location"]).group(1)
+    assert state != "login" and len(state) >= 32  # niente valore parlante
+
+    assert stato_oauth.REGISTRO.consuma(state, "login")
+    with pytest.raises(stato_oauth.StatoNonValido):
+        stato_oauth.REGISTRO.consuma(state, "login")  # replay: brucia una volta sola
+
+    altro = stato_oauth.REGISTRO.crea("calendario", dati="anna-mondora")
+    with pytest.raises(stato_oauth.StatoNonValido):
+        stato_oauth.REGISTRO.consuma(altro, "login")  # scopo diverso
+
+
+def test_il_token_di_invito_non_viaggia_nello_state(client, manager):
+    from timemachine.auth import store as auth_store
+
+    token = _invita(manager)
+    r = client.get(f"/attiva/google?t={token}", follow_redirects=False)
+    assert token not in r.headers["location"]
+
+    # e un callback con uno state inventato non attiva nessuno
+    r = client.get("/attiva/google/callback?code=x&state=inventato")
+    assert r.status_code == 400
+    assert not (auth_store.account("anna-mondora") or auth_store.Account(persona="x")).attiva
+
+
 # --- extra: la mail non contiene turni --------------------------------------
 
 

@@ -24,7 +24,7 @@ from fastapi.templating import Jinja2Templates
 from .. import tempo, vista
 from ..agents import copilot as agente_copilot
 from ..agents.llm import LLMGiu
-from ..auth import attivazione, sessioni
+from ..auth import attivazione, sessioni, stato_oauth
 from ..auth.attivazione import AttivazioneNegata, TroppiTentativi
 from ..calendario import collega, scollega
 from ..calendario import sync as sync_calendario
@@ -43,6 +43,10 @@ template = Jinja2Templates(directory=str(BASE / "templates"))
 
 #: widget iniettati nel flusso della sessione corrente (P-F: non si naviga via)
 _FLUSSO: dict[str, dict[str, Any]] = {}
+
+#: un callback OAuth senza `state` valido non è «un errore dell'utente»:
+#: è un tentativo di far completare a lei un consenso che non ha iniziato.
+ERRORE_CONSENSO = "Consenso non valido o scaduto. Rifallo partire da qui."
 
 MESI = (
     "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
@@ -125,14 +129,20 @@ def login(request: Request, uid: str = Form(""), password: str = Form("")):
 def login_google_avvio(request: Request):
     from ..auth.oidc import url_login
 
-    return RedirectResponse(url_login(str(request.url_for("login_google_ritorno")), "login"))
+    state = stato_oauth.REGISTRO.crea("login")
+    return RedirectResponse(url_login(str(request.url_for("login_google_ritorno")), state))
 
 
 @app.get("/login/google/callback", name="login_google_ritorno")
-def login_google_ritorno(request: Request, code: str = ""):
+def login_google_ritorno(request: Request, code: str = "", state: str = ""):
     try:
+        stato_oauth.REGISTRO.consuma(state, "login")  # CSRF: state a uso singolo
         sessione = attivazione.login_google(
             code, str(request.url_for("login_google_ritorno")), request.cookies.get(sessioni.NOME_COOKIE)
+        )
+    except stato_oauth.StatoNonValido:
+        return template.TemplateResponse(
+            request, "landing.html", {"errore": ERRORE_CONSENSO}, status_code=400
         )
     except (AttivazioneNegata, PermissionError):
         return template.TemplateResponse(
@@ -234,16 +244,23 @@ def attiva_password(
 
 @app.get("/attiva/google")
 def attiva_google_avvio(request: Request, t: str = ""):
+    """Il token d'invito resta **server-side**: nel `state` va solo un opaco."""
     from ..auth.oidc import url_login
 
-    return RedirectResponse(url_login(str(request.url_for("attiva_google_ritorno")), t))
+    state = stato_oauth.REGISTRO.crea("attivazione", dati=t)
+    return RedirectResponse(url_login(str(request.url_for("attiva_google_ritorno")), state))
 
 
 @app.get("/attiva/google/callback", name="attiva_google_ritorno")
 def attiva_google_ritorno(request: Request, code: str = "", state: str = ""):
     try:
+        stato = stato_oauth.REGISTRO.consuma(state, "attivazione")
         sessione = attivazione.crea_account_google(
-            state, code, str(request.url_for("attiva_google_ritorno"))
+            stato.dati, code, str(request.url_for("attiva_google_ritorno"))
+        )
+    except stato_oauth.StatoNonValido:
+        return template.TemplateResponse(
+            request, "attiva.html", {"valido": False, "messaggio": ERRORE_CONSENSO}, status_code=400
         )
     except (AttivazioneNegata, PermissionError) as e:
         return template.TemplateResponse(
@@ -628,15 +645,25 @@ def calendario_collega(request: Request, persona: str = ""):
         return JSONResponse({"errore": "solo la persona collega il proprio calendario"}, status_code=403)
     from ..calendario import url_consenso
 
+    state = stato_oauth.REGISTRO.crea(
+        "calendario", dati=slug, sessione=request.cookies.get(sessioni.NOME_COOKIE) or ""
+    )
     return RedirectResponse(
-        url_consenso(slug, str(request.url_for("calendario_ritorno")), slug)
+        url_consenso(slug, str(request.url_for("calendario_ritorno")), state)
     )
 
 
 @app.get("/calendario/callback", name="calendario_ritorno")
 def calendario_ritorno(request: Request, code: str = "", state: str = ""):
     a = attore(request)
-    if a.anonimo() or a.slug != state:
+    try:
+        # legato allo scopo **e** alla sessione che ha avviato il consenso
+        stato = stato_oauth.REGISTRO.consuma(
+            state, "calendario", request.cookies.get(sessioni.NOME_COOKIE) or ""
+        )
+    except stato_oauth.StatoNonValido:
+        return JSONResponse({"errore": ERRORE_CONSENSO}, status_code=400)
+    if a.anonimo() or a.slug != stato.dati:
         return JSONResponse({"errore": "consenso non riferibile a questa sessione"}, status_code=403)
     persona = kb_persone.leggi(a.slug)
     collega(

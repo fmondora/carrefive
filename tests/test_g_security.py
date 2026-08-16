@@ -236,6 +236,20 @@ def test_g8_il_matcher_kb_secret_vede_un_token_in_una_md(tmp_path):
     assert matchers.blocca_merge(trovati)
 
 
+def test_g8_ter_il_matcher_vede_uno_state_oauth_costante(tmp_path):
+    """Regressione: `url_login(redirect, "login")` è login CSRF, non un dettaglio."""
+    from timemachine.security import matchers
+
+    finta = tmp_path / "repo"
+    (finta / "web").mkdir(parents=True)
+    (finta / "web" / "app.py").write_text(
+        'return RedirectResponse(url_login(str(request.url_for("cb")), "login"))\n',
+        encoding="utf-8",
+    )
+    trovati = matchers.scan(finta)
+    assert [f.matcher for f in trovati] == ["oauth-state-fisso"]
+
+
 def test_g8_bis_il_repo_vero_e_pulito():
     from timemachine.security import matchers
 

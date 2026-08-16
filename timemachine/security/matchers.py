@@ -70,6 +70,12 @@ MATCHERS: tuple[Matcher, ...] = (
         escludi=("timemachine/security/matchers.py", "timemachine/kb/secondo.py", "timemachine/agents/anomaly.py"),
     ),
     Matcher(
+        slug="oauth-state-fisso",
+        cerca=re.compile(r"url_(login|consenso)\(.*,\s*[\"'][^\"']+[\"']\s*\)"),
+        perche="state OAuth costante o parlante: login CSRF e replay del consenso — `05` §4.6",
+        escludi=("timemachine/security/matchers.py",),
+    ),
+    Matcher(
         slug="pii-in-log",
         cerca=re.compile(r"(print|log\w*)\([^)]*(password|token|codice_fiscale|residuo)", re.I),
         perche="CF, token o residui nei log applicativi — minimizzazione `05`",

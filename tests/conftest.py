@@ -56,6 +56,9 @@ def ambiente(tmp_path, monkeypatch):
     CODA.svuota()
     sessioni.REGISTRO.svuota()
     authz.REGISTRO.svuota()
+    from timemachine.auth import stato_oauth
+
+    stato_oauth.REGISTRO.svuota()
     attivazione.LIMITATORE.azzera()
     auth_store.svuota()
     yield kb

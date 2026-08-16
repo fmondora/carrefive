@@ -27,7 +27,12 @@ from .store import TokenGoogle
 
 
 def url_consenso(slug: str, redirect_uri: str, state: str) -> str:
-    """La schermata è di Google, non un form nostro (`03` §4.2 punto 2)."""
+    """La schermata è di Google, non un form nostro (`03` §4.2 punto 2).
+
+    Verso Google va il minimo: scope, redirect e uno `state` opaco. Niente
+    slug, niente email: chi è la persona lo sappiamo noi, non serve dirlo a
+    loro per farle vedere una schermata di consenso.
+    """
     return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(
         {
             "client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
@@ -37,7 +42,6 @@ def url_consenso(slug: str, redirect_uri: str, state: str) -> str:
             "access_type": "offline",
             "prompt": "consent",
             "state": state,
-            "login_hint": slug,
         }
     )
 
