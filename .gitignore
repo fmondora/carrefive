@@ -1,0 +1,7 @@
+.obsidian/
+.DS_Store
+*.swp
+.venv/
+__pycache__/
+.env
+.env.*
