@@ -44,6 +44,7 @@ Il dipendente non è più un utente di serie B: ha la stessa atomica del manager
 - P-F: un'azione inietta il prossimo widget *nello stesso flusso*. Non si viene sbalzati sul tabellone.
 - Un vocabolario, non uno per agente.
 - `[AIEngineer]` enum del modello ⊆ Renderer. Registry unico prima dello stream.
+- Aspetto: `06-design-system.md` (Beautiful UI + fresco). Il catalogo non cambia forma per estetica.
 
 ---
 
@@ -81,6 +82,7 @@ Niente griglia 30×7 nel guscio.
 | Tipo | Famiglia | Det/Gen | Cosa fa | Chi lo decide |
 |---|---|---|---|---|
 | **`person-shifts`** | persona | Det | i turni di *una* persona: **ora** (o oggi) + **prossimi**. Sempre montato per l'utente. Stesso tipo, riusato per gli altri in una bozza | mapping da `kb/turni/` + bozza. L'LLM può *scegliere di mostrarne un altro* (es. «i turni di Anna»), non inventarne il contenuto |
+| **`person-balances`** | persona | Det | montante ferie/permessi (`04`). Sempre per me, accanto a `person-shifts` | mapping da `saldi.di`. Mai LLM |
 | `coverage-gap` | insieme | Det | buco: fascia, reparto, teste mancanti — lista, non griglia | mapping forecast vs piano |
 | `compliance-block` | insieme | Det | violazioni, blocca Pubblica | mapping da Compliance |
 | `proposal-pack` | insieme | Det* | 1–3 varianti; ogni variante è un insieme di `person-shifts` toccati, non un tabellone | Scheduling produce; vista mappa |
@@ -138,7 +140,7 @@ Testo libero sempre attivo accanto alle chip. Il Copilot non inventa chip.
 
 ### 4.3 Composizione `[AIUxer #19 + AIEngineer registry]`
 
-**Landing (tutti).** Guscio + `person-shifts(me)`. Stop.
+**Landing (tutti).** Guscio + `person-shifts(me)` + `person-balances(me)`. Stop.
 
 **Preferenza.** «Giovedì ho pianoforte» → `copilot-turn` + `scheda-preview` + chip `salva-preferenza`. Il `person-shifts` resta. Se la preferenza è confermata, i `prossimi` non si riscrivono da soli: entra nello Scheduling al prossimo ciclo.
 
@@ -219,3 +221,47 @@ Anticipazione: «domenica sei in pizze» sta già in `person-shifts.prossimi`. �
 **Prossimo passo di processo**
 
 Skill `surface-map` su *questo* frame (persona-first) → scelta layout → `project-book` → implementazione da Book §09.
+
+---
+
+## 8. Use case
+
+Scritti da **AIUxer**. Esercitano il catalogo e il landing.
+
+### UC-06 Landing: i miei turni
+- **Chi:** Anna Mondora
+- **Quando:** primo paint, login, settimana 29/06 in kb
+- **Fa:**
+  1. Apre l'app.
+  2. Guscio: lei, Le Rocce, `person-shifts(me)` + `person-balances(me)`. Stop.
+  3. `adesso` / oggi e `prossimi` = 14-20, No, 12-20 PIZZE POME, 7-16, `R`, spezzati pizze.
+  4. `ore_periodo` 41, da codice, non da testo Copilot.
+  5. Chiude il copilota se era aperto: i due widget restano. Zero `week-grid`.
+- **Esito:** la casa è la persona. Il tabellone non è nel landing.
+- **AI può / non può:** non emette il guscio e non inventa orari; può solo *scegliere di mostrare* un altro `person-shifts` in consulta.
+
+### UC-07 Preferenza: pianoforte / NO CHIUSURA
+- **Chi:** Anna Mondora; stesso gesto per Monia
+- **Quando:** Anna vede gio 02/07 alle 7-16 e ha lezione di pianoforte il pomeriggio
+- **Fa:**
+  1. Sul proprio `person-shifts` scrive al Copilot: «giovedì pomeriggio ho pianoforte».
+  2. Arriva `copilot-turn` + `scheda-preview` su `kb/persone/anna-mondora.md` (preferenza: no pomeriggio del giovedì).
+  3. Il `person-shifts` resta; i `prossimi` pubblicati non si riscrivono.
+  4. Conferma con `salva-preferenza`.
+  5. Monia, stesso flusso sulla nota del 23/06: «no chiusura» → `scheda-preview` + `salva-preferenza` su `kb/persone/monia.md`.
+  6. Entra nello Scheduling solo al prossimo `genera-bozza`, se copertura e CCNL lo permettono.
+- **Esito:** fatto in scheda, confermato da lei. Non è memoria del secondo.
+- **AI può / non può:** può proporre il diff; non scrive la scheda senza `salva-preferenza` e non sposta i pubblicati.
+
+### UC-08 Bozza come persone toccate
+- **Chi:** store manager
+- **Quando:** bozza pronta che sposta Debora e Cesare (pizze / spezzati C+B)
+- **Fa:**
+  1. Resta sulla home persona. Non naviga. `week-grid` chiuso.
+  2. `proposal-pack` = `person-shifts` di Debora e Cesare, `overlay: bozza` + `diff-edit` vs pubblicato.
+  3. Se manca una testa pizze pome: `coverage-gap`. Se un riposo è rotto: `compliance-block` e niente `pubblica`.
+  4. `rationale` a lato (copy generata; fatti da path kb).
+  5. Chip `scegli-variante` / `accetta-bozza` / `rifiuta-bozza` / `consulta`. `pubblica` solo dopo accetta e se `pubblicabile`.
+  6. Non preme `apri-tabellone`. Se lo fa, è vista: chiuderla torna alle persone.
+- **Esito:** capisce chi cambia senza il foglio 30×7.
+- **AI può / non può:** Scheduling emette dominio; Copilot mappa i widget. Nessuno apre il tabellone al posto suo.

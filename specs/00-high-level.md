@@ -122,7 +122,7 @@ Confine deterministico: motore di calcolo ore/maggiorazioni, registro timbrature
 
 ### 5.4 Requisiti non funzionali
 
-- **Conformità by design**: AI Act alto rischio → supervisione umana obbligatoria, documentazione tecnica, log delle decisioni, valutazione di conformità prima del rilascio. GDPR → data residency UE, minimizzazione, pseudonimizzazione dei dati verso i modelli, retention log inferenza ≤ 30 gg, nessun training sui dati dei clienti. Art. 4 Statuto → funzioni di analisi individuale disattivabili modularmente + kit documentale per accordo sindacale / istanza Ispettorato fornito al cliente.
+- **Conformità by design**: AI Act alto rischio → supervisione umana obbligatoria, documentazione tecnica, log delle decisioni, valutazione di conformità prima del rilascio. GDPR → data residency UE, minimizzazione, pseudonimizzazione dei dati verso i modelli, retention log inferenza ≤ 30 gg, nessun training sui dati dei clienti. Art. 4 Statuto → funzioni di analisi individuale disattivabili modularmente + kit documentale per accordo sindacale / istanza Ispettorato fornito al cliente. Operativo in `05-security-gdpr.md`.
 - **Affidabilità**: il punto vendita non si ferma se l'AI è giù — pianificazione manuale e timbratura funzionano sempre (AI = enhancement, non dipendenza). Uptime target 99,9% sulle funzioni core.
 - **Costi AI sostenibili**: operazioni frequenti su modelli piccoli/regole; LLM grandi solo su copilot e spiegazioni. Target: costo inferenza < 10% del prezzo per utente.
 - **Integrazione**: API aperte; export tracciati paghe standard italiani; import da POS per il forecasting.
@@ -188,3 +188,35 @@ KR1: 40+ punti vendita, almeno 2 insegne multi-store. KR2: onboarding di un nuov
 - Italia: [Zucchetti Retail/GDO](https://www.zucchetti.it/it/cms/settori/retail-gdo) · [Zucchetti gestione turni](https://www.zcscloud.it/cost-planning-zucchetti-infinity/gestione-turni) · [Factorial — software gestione turni 2026](https://factorial.it/blog/i-migliori-software-per-la-gestione-dei-turni/) · [Sesame HR — AI per i turni](https://www.sesamehr.it/blog/gestione-dei-turni/intelligenza-artificiale-turni-lavoro/)
 
 *Documento in bozza: i valori tra [parentesi] e le baseline "da misurare" vanno riempiti con i dati reali dei pilota.*
+
+---
+
+## 10. Use case
+
+Scritti da **AIUxer**. Esempi di utilizzo, non eval. Persone vere di Le Rocce.
+
+### UC-01 La settimana in negozio
+- **Chi:** store manager di Le Rocce; Matteo (apertura), Anna Mondora, Debora, Monia
+- **Quando:** settimana già pubblicata 29/06–05/07 (mer alzare da terra, gio shooting 8:00, ven ordine scat)
+- **Fa:**
+  1. Lunedì: Matteo su `person-shifts` ha `adesso` 6-14; Anna 14-20; Monia 7-12.
+  2. Martedì: Anna vede `badge-stato` «No»; Debora `R`.
+  3. Mercoledì: Anna `etichetta-mansione` PIZZE POME 12-20; il negozio alza da terra senza aprire il foglio.
+  4. Giovedì shooting: i `prossimi` di Debora (pizze pome) e Cesare (7-16 C) lo dicevano già da lunedì.
+  5. Venerdì: Anna `R`; Matteo 6-14.
+  6. Weekend: Anna spezzati pizze; Matteo `R` sabato, spezzato domenica.
+  7. Il manager non preme `apri-tabellone`; interviene solo se compare un `coverage-gap`.
+- **Esito:** la settimana si vive persona per persona. Il 30×7 resta in `kb/turni/`, non è la casa.
+- **AI può / non può:** può aver proposto quella settimana a monte; a settimana in corso non riscrive i pubblicati e non conta le ore.
+
+### UC-02 Anna nella sua settimana
+- **Chi:** Anna Mondora (40h, pizze pomeriggio, Le Rocce)
+- **Quando:** lun 29/06 → dom 05/07, piano pubblicato
+- **Fa:**
+  1. Apre l'app: `person-shifts` suoi + `person-balances` (96h ferie, 24h permessi). Nessun tabellone.
+  2. Oggi lunedì: `adesso` 14-20; `prossimi` = No, mer pizze 12-20, gio 7-16, ven `R`, sab+dom spezzati pizze; `ore_periodo` 41.
+  3. Il giovedì 7-16 le pesta il pianoforte — lo vede lei, sul suo widget, non sul foglio del manager.
+  4. Non cerca i turni di Debora o Matteo: i colleghi non sono la sua home.
+  5. Torna mercoledì solo per confermare le pizze; chiude.
+- **Esito:** sa quando lavora e quanto le resta di ferie, senza chiedere al manager e senza il foglio.
+- **AI può / non può:** non inventa orari né residuo; mostra piano pubblicato e saldi calcolati in codice.

@@ -192,3 +192,35 @@ Canary online: lag p95 sync, % persone in errore, 401 persistenti.
 - Calendario unico del negozio condiviso.
 - Sync bidirezionale (un evento creato da Anna non diventa un turno).
 - Inviti a eventi del negozio (shooting, festa Proloco) oltre il suo turno.
+
+---
+
+## 8. Use case
+
+Scritti da **AIUxer**.
+
+### UC-09 Collega Google, primo sync
+- **Chi:** Anna Mondora (solo lei; il manager non collega al posto suo)
+- **Quando:** piano 29/06 pubblicato; Google non ancora collegato
+- **Fa:**
+  1. Su `person-shifts`, chip `collega-google`.
+  2. OAuth Google (schermata Google, non un form nostro).
+  3. Al ritorno: badge «Calendario on» + email mascherata + chip `scollega-google`.
+  4. Primo sync: crea `Le Rocce — Turni`; upsert dei suoi spezzoni futuri.
+  5. Sab e dom spezzati pizze = due eventi ciascuno. Ven `R` = nessun evento. Zero eventi di Debora.
+  6. In scheda solo `calendario.stato: collegato`. Token fuori da `kb/`.
+- **Esito:** i pubblicati occupano il suo Google (`opaque`). Il pianoforte del giovedì vede il conflitto lì.
+- **AI può / non può:** Copilot può avviare il comando; non vede il token e non crea eventi.
+
+### UC-10 Ripubblica, il calendario segue
+- **Chi:** store manager pubblica; Anna ha Google collegato
+- **Quando:** `pubblica` sposta Anna da mer 12-20 PIZZE POME a 7-16
+- **Fa:**
+  1. Il manager conferma `pubblica` (piano, non bozza).
+  2. Job `sync-calendario` su Anna: upsert mercoledì, niente doppione.
+  3. Se in un giro dopo toglie Anna dal sabato e ripubblica: delete dell'evento nostro; gli altri restano.
+  4. Anna su `person-shifts`: badge «In aggiornamento», poi «Calendario on».
+  5. Una bozza non pubblicata che la sposta: zero write su Google.
+  6. Se Google è 503: `pubblica` è già ok; retry; i turni nel widget restano.
+- **Esito:** calendario = spezzoni futuri del piano pubblicato, entro 2 minuti. Passato intoccato.
+- **AI può / non può:** non sincronizza; è codice dopo ratifica umana. Bozze mai sul calendario.

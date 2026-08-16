@@ -171,6 +171,7 @@ Draft ≠ act: i worker preparano Proposte. Mai `pubblica`, mai write su scheda 
 | Approvare / modificare / rifiutare / pubblicare turni | Umano (manager) |
 | Confermare una preferenza o una mansione nuova in scheda | Umano (persona o manager) |
 | Calcolare ore, maggiorazioni, riposi, pubblicabilità CCNL | Codice, zero AI |
+| Mostrare il montante ferie/permessi | Codice, da file o Gamma (`04`). Mai LLM |
 | Registro timbrature, export paghe | Codice, zero AI |
 | Scrivere i turni pubblicati sul calendario Google della persona | Codice, dopo `pubblica` (`03`). Mai le bozze |
 
@@ -221,3 +222,47 @@ Canary online: tasso accettazione, violazioni pubblicate (=0), costo/settimana, 
 **Fuori**
 
 - Payroll, biometrico, scoring individuale, multi-store, copilot dipendente come superficie primaria (il dipendente in questa edizione aggiorna la scheda e legge i turni; non parla col consiglio).
+
+---
+
+## 8. Use case
+
+Scritti da **AIUxer**. Esercitano il contratto di questa spec.
+
+### UC-03 Bozza, accetta, pubblica
+- **Chi:** store manager di Le Rocce
+- **Quando:** prima del lun 29/06; in kb c'è `2026-06-22` (festa Proloco) come storia
+- **Fa:**
+  1. Chip `genera-bozza` (o NL al Copilot). Guscio: `bozza in preparazione` dal job, non uno spinner finto.
+  2. Ciclo: `carica_contesto` → forecast → scheduling → compliance → `attesa_umano`.
+  3. Legge `proposal-pack`: `person-shifts` overlay di chi cambia (Anna pizze, Debora, Cesare C+B, Matteo 6-14) + `rationale` + `coverage-gap` (shooting gio, pizze pome).
+  4. Matteo esce a 52h su contratto 40: se Compliance flagga, vede `compliance-block` e `pubblica` non c'è.
+  5. `sposta-turno` su Matteo (toglie uno spezzone) → di nuovo scheduling/compliance → `attesa_umano`.
+  6. `accetta-bozza` (preview di chi è toccato, chi perde un riposo) poi `pubblica`.
+  7. Scrittura su `kb/turni/2026-06-29.md`; secondo-pv prende il diff, non un giudizio su Matteo.
+- **Esito:** piano pubblicato *modificato dal manager*, zero violazioni, ciclo in `monitora`.
+- **AI può / non può:** può proporre e spiegare; non pubblica, non salta compliance, non scrive il turno da sola.
+
+### UC-04 Consulta senza muovere il ciclo
+- **Chi:** store manager
+- **Quando:** ciclo in `idle` o `attesa_umano`; serve il gio pomeriggio pizze senza straordinario
+- **Fa:**
+  1. Chip `consulta` o testo al Copilot: «chi copre giovedì pomeriggio senza straordinario?»
+  2. Copilot fa `consult(scheduling, …)` — non avanza la macchina a stati.
+  3. Risposta: `copilot-turn` + `person-shifts` di Debora e Anna (mansione pizze in scheda) + `rationale`.
+  4. Fonti: `kb/persone/debora.md`, `kb/persone/anna-mondora.md`, `kb/turni/2026-06-22.md`.
+  5. Nessun write. Per assegnare serve `sposta-turno` o un nuovo ciclo.
+- **Esito:** sa chi può, con path kb; il ciclo è dove l'ha lasciato.
+- **AI può / non può:** può consultare e mostrare una Proposta; zero side-effect, non assegna il giovedì.
+
+### UC-05 AI giù, il pubblicato resta
+- **Chi:** Anna Mondora; in parallelo lo store manager
+- **Quando:** settimana 29/06 già pubblicata; forecast / scheduling / Copilot non rispondono
+- **Fa:**
+  1. Anna apre: `person-shifts` = ultimo pubblicato (lun 14-20, mar No, mer pizze, …). `person-balances` intatti.
+  2. Copilota spento in modo onesto — niente 200 finto su forecast.
+  3. Il manager tenta `genera-bozza`: il job fallisce visibile; nessuna bozza nuova.
+  4. Timbratura e turni pubblicati restano usabili.
+  5. Nessun `week-grid` imposto come «piano B».
+- **Esito:** il negozio lavora sul pubblicato; la pianificazione nuova aspetta l'AI.
+- **AI può / non può:** non può fingersi viva; il path deterministico non dipende da lei.

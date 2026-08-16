@@ -14,12 +14,18 @@ Invariante: **l'AI propone, l'umano dispone, il calcolo è deterministico.**
 
 ## Surface map paths
 - Specs: `specs/`
-- Knowledge: `kb/persone/`, `kb/turni/`, `kb/reparti.md`, `kb/secondo/`
+- Knowledge: `kb/persone/`, `kb/turni/`, `kb/saldi/`, `kb/reparti.md`, `kb/secondo/`
 - Catalog / types: (non ancora — nascerà con `02`)
 - Renderer: (non ancora)
 - Runtime agents: (non ancora)
 - Shell: (non ancora)
 - Design root: questo repo
+
+## Design system
+Prima di qualsiasi UI: `specs/06-design-system.md`. Carta, foglia, Fraunces + Source Sans 3. Grammatica [Beautiful UI](https://www.beautifului.dev/), non la libreria. Catalogo tipi in `02`.
+
+## Security
+Vincoli in `specs/05-security-gdpr.md`. `kb/` = dati personali. Secret solo come nome di env. Quando c'è runtime: DeepSec `process --diff` in CI.
 
 ## Convenzioni
 - Lingua: italiano.

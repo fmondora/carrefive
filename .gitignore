@@ -5,3 +5,6 @@
 __pycache__/
 .env
 .env.*
+.deepsec/data/
+.deepsec/setup/
+.deepsec/node_modules/

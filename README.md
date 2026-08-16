@@ -22,6 +22,9 @@ Si costruisce da qui, non dalla chat. Come si scrive una spec: `specs/README.md`
 | [01 — sistema agentico](specs/01-sistema-agentico.md) | Contratto agenti, orchestratore, knowledge, evals |
 | [02 — GenUI](specs/02-genui.md) | Superficie persona-first, catalogo chiuso, chip |
 | [03 — calendario Google](specs/03-calendario-google.md) | OAuth, sync dei soli turni pubblicati |
+| [04 — ferie e permessi](specs/04-ferie-permessi-gamma.md) | Montante in kb (file), poi tempo reale da Gamma |
+| [05 — security e GDPR](specs/05-security-gdpr.md) | Cosa condivide il dipendente; authz; DeepSec |
+| [06 — design system](specs/06-design-system.md) | Beautiful UI + fresco; token; mappa primitive |
 
 ## Knowledge (pilota)
 
@@ -29,6 +32,7 @@ Markdown, leggibile da un umano. Tre famiglie:
 
 - `kb/persone/` — scheda di ciascuno: contratto, mansioni, preferenze
 - `kb/turni/` — settimane pubblicate (22/06 e 29/06/2026) + foto dei tabelloni
+- `kb/saldi/` — montante ferie/permessi (file ora; snapshot Gamma dopo)
 - `kb/secondo/` — memoria collettiva del negozio (ancora vuota)
 
 Mappa colori → reparti: `kb/reparti.md`.
