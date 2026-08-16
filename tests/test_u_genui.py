@@ -165,6 +165,51 @@ def test_u9_genera_bozza_non_naviga_via_e_mostra_lo_stato_del_job(client, sessio
     assert 'data-tipo="person-shifts"' in html
 
 
+def test_apri_scheda_e_una_vista_deterministica_della_md(client, sessione_di):
+    """Chip `apri-scheda`: il file così com'è, senza una riga generata."""
+    sessione_di("anna-mondora")
+    html = client.post("/chip/apri-scheda", follow_redirects=True).text
+    assert "kb/persone/anna-mondora.md" in html
+    assert "PIZZE POME" in html
+    assert 'class="card generata"' not in html
+
+
+def test_la_storia_di_una_preferenza_non_si_vede_dalla_scheda_altrui(client, sessione_di, manager):
+    from timemachine.domain.modelli import Preferenza
+
+    kb_persone.salva_preferenza(
+        "anna-mondora",
+        Preferenza(vincolo="no_pomeriggio: gio", storia="lezione di pianoforte", origine="confermata"),
+    )
+    sessione_di("francesco")
+    html = client.get("/scheda/anna-mondora").text
+    assert "no_pomeriggio: gio" in html
+    assert "pianoforte" not in html
+
+    sessione_di("anna-mondora")
+    assert "pianoforte" in client.get("/scheda/anna-mondora").text
+
+
+def test_la_scheda_di_un_collega_e_403_per_un_dipendente(client, sessione_di):
+    sessione_di("jessica")
+    assert client.get("/scheda/anna-mondora").status_code == 403
+
+
+def test_il_secondo_compare_solo_se_ha_qualcosa_da_dire(client, sessione_di):
+    """`02` §4.5: retrieval del secondo, niente spam proattivo."""
+    from timemachine.kb import secondo as kb_secondo
+
+    sessione_di("anna-mondora")
+    assert 'data-tipo="secondo-note"' not in client.get("/home").text
+
+    kb_secondo.append(
+        "sabati", "a giugno il banco pizze del sabato vuole due teste", quando="2026-06-01"
+    )
+    html = client.get("/home").text
+    assert 'data-tipo="secondo-note"' in html
+    assert "banco pizze del sabato" in html
+
+
 def test_il_landing_anonimo_non_mostra_turni(client):
     html = client.get("/", follow_redirects=False).text
     assert "person-shifts" not in html

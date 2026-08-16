@@ -36,6 +36,7 @@
   {# Slot fisso: i miei turni + i miei saldi. Sempre, anche col copilota chiuso. #}
   {{ W.person_shifts(turni, mio=True) }}
   {{ W.person_balances(saldi) }}
+  {% if secondo %}{{ W.secondo_note(secondo) }}{% endif %}
 
   {% for w in widget %}{{ W.render(w) }}{% endfor %}
 </main>

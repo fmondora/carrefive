@@ -298,6 +298,27 @@ def login_google(code: str, redirect_uri: str = "", sessione_corrente: str | Non
     return REGISTRO.ruota(sessione_corrente, conto.persona)
 
 
+def password_dimenticata(email_o_uid: str, base_url: str = "") -> dict:
+    """Reset (`07` §4.4). **Non è un'attivazione**: non crea persone.
+
+    Il token va all'email *già* in scheda; la risposta è identica anche se
+    l'account non esiste, altrimenti la pagina diventa un oracolo su chi c'è.
+    """
+    LIMITATORE.consenti(f"reset:{(email_o_uid or '').lower()}")
+    risposta = {
+        "messaggio": "Se quell'account esiste, gli abbiamo mandato un link per rientrare.",
+        "link": "",
+    }
+    conto = store.per_uid(email_o_uid)
+    if conto is None or not conto.attiva or not conto.email:
+        return risposta
+    token = _crea_token(conto.persona, conto.email, "email")
+    risposta["link"] = f"{base_url.rstrip('/')}/attiva?t={token}"
+    risposta["oggetto"] = "Rientra nei tuoi turni — Le Rocce"
+    audit.accesso(conto.persona, "password-dimenticata", "ok")
+    return risposta
+
+
 def imposta_password_dopo(persona: str, uid: str, password_chiara: str) -> None:
     """«Aggiungi una password» dalla scheda. Sempre lei, mai Emilio (`07` §4.3)."""
     conto = store.account(persona)

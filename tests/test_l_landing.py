@@ -239,6 +239,35 @@ def test_l10_bis_emilio_vede_la_lista_senza_saldi_ne_preferenze(client, sessione
     assert "invia attivazione" in html
 
 
+# --- password dimenticata (`07` §4.4) ----------------------------------------
+
+
+def test_password_dimenticata_non_crea_persone_e_non_rivela_nulla(client, manager):
+    prima = len(store.tutti_account())
+
+    r_ignoto = client.post("/password-dimenticata", data={"uid": "chi.non.esiste@x.it"})
+    assert r_ignoto.status_code == 200
+    assert len(store.tutti_account()) == prima  # non è un'attivazione: non crea persone
+
+    token = _invita(manager)
+    client.post(
+        "/attiva",
+        data={"t": token, "uid": "anna@example.com", "password": "settelune2026", "password2": "settelune2026"},
+    )
+    client.get("/logout")
+    r_noto = client.post("/password-dimenticata", data={"uid": "anna@example.com"})
+    assert r_noto.text == r_ignoto.text  # stessa pagina: nessun oracolo su chi esiste
+
+    esito = attivazione.password_dimenticata("anna@example.com", "https://tm")
+    nuovo = _token_da_link(esito["link"])
+    client.post(
+        "/attiva",
+        data={"t": nuovo, "uid": "anna@example.com", "password": "altralunga2026", "password2": "altralunga2026"},
+    )
+    assert attivazione.login_password("anna@example.com", "altralunga2026").persona == "anna-mondora"
+    assert store.account("anna-mondora").attiva
+
+
 # --- extra: la mail non contiene turni --------------------------------------
 
 

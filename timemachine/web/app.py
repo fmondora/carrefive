@@ -44,6 +44,11 @@ template = Jinja2Templates(directory=str(BASE / "templates"))
 #: widget iniettati nel flusso della sessione corrente (P-F: non si naviga via)
 _FLUSSO: dict[str, dict[str, Any]] = {}
 
+MESI = (
+    "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+    "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+)
+
 
 # --- utilità -----------------------------------------------------------------
 
@@ -134,6 +139,23 @@ def login_google_ritorno(request: Request, code: str = ""):
             request, "landing.html", {"errore": attivazione.MESSAGGIO_CREDENZIALI}, status_code=401
         )
     return _apri_sessione(_verso_home(), sessione)
+
+
+@app.get("/password-dimenticata", response_class=HTMLResponse)
+def password_dimenticata_form(request: Request):
+    return template.TemplateResponse(request, "password.html", {})
+
+
+@app.post("/password-dimenticata", response_class=HTMLResponse)
+def password_dimenticata(request: Request, uid: str = Form("")):
+    """Risposta identica per account esistente o no (`07` §2, enumerazione)."""
+    try:
+        esito = attivazione.password_dimenticata(uid, str(request.base_url).rstrip("/"))
+    except TroppiTentativi:
+        esito = {"messaggio": "Troppi tentativi. Riprova fra qualche minuto.", "link": ""}
+    return template.TemplateResponse(
+        request, "password.html", {"messaggio": esito["messaggio"]}
+    )
 
 
 @app.get("/logout")
@@ -244,10 +266,18 @@ def home(request: Request):
     persona = kb_persone.leggi(a.slug)
     ciclo = _ciclo()
     flusso = _flusso(request)
+
+    # «il negozio sa che…»: retrieval, non spam proattivo (`02` §4.5)
+    from ..kb import secondo as kb_secondo
+
+    note = kb_secondo.retrieval(
+        [MESI[_oggi().month - 1], _settimana_corrente().isoformat()], limite=3
+    )
     return template.TemplateResponse(
         request,
         "home.html",
         {
+            "secondo": vista.secondo_note(note) if note else None,
             "persona": persona,
             "turni": vista.person_shifts(
                 a.slug, a, oggi=_oggi(), bozza=ciclo.bozza if a.manager else None
@@ -300,6 +330,10 @@ async def chip(request: Request, nome: str):
 
         if nome == "apri-tabellone":
             return RedirectResponse("/tabellone", status_code=303)
+
+        if nome == "apri-scheda":
+            slug = str(dati.get("persona") or a.slug)
+            return RedirectResponse(f"/scheda/{slug}", status_code=303)
 
         if nome == "genera-bozza":
             ciclo.genera_bozza(a)
@@ -480,6 +514,41 @@ def _conferma(
 
 
 # --- tabellone ---------------------------------------------------------------
+
+
+@app.get("/scheda/{slug}", response_class=HTMLResponse)
+def scheda(request: Request, slug: str):
+    """Chip `apri-scheda`: la md **così com'è** (`02` §4.2). Nessuna generazione.
+
+    Il manager vede la forma operativa; la storia di una preferenza resta alla
+    persona (`05` §4.2), quindi la si oscura per chi non è lei.
+    """
+    a = attore(request)
+    try:
+        from ..security.authz import esigi_scheda
+
+        esigi_scheda(a, slug)
+    except Negato:
+        return JSONResponse({"errore": "403"}, status_code=403)
+    persona = kb_persone.leggi(slug)
+    if persona is None:
+        return JSONResponse({"errore": "nessuna scheda"}, status_code=404)
+    testo = kb_persone.percorso(slug).read_text(encoding="utf-8")
+    if a.slug != slug:
+        for pref in persona.preferenze:
+            if pref.storia:
+                testo = testo.replace(f" — storia: «{pref.storia}»", "")
+                testo = testo.replace(pref.storia, "…")
+    return template.TemplateResponse(
+        request,
+        "scheda.html",
+        {
+            "persona": persona,
+            "testo": testo,
+            "path": f"kb/persone/{slug}.md",
+            "mia": a.slug == slug,
+        },
+    )
 
 
 @app.get("/tabellone", response_class=HTMLResponse)

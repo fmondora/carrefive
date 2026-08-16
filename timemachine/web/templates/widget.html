@@ -42,6 +42,7 @@
 
   {% if w.calendario %}
     <div class="chip-riga">
+      <a class="chip" href="/scheda/{{ w.persona }}">apri scheda</a>
       {% if w.calendario.stato == "collegato" %}
         <span class="badge">Calendario on · {{ w.calendario.email_mascherata }}</span>
       {% elif w.calendario.stato == "in-aggiornamento" %}
