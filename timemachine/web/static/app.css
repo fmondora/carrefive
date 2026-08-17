@@ -22,6 +22,9 @@ a { color: var(--foglia); }
   margin: 0 auto;
   padding: var(--s3) var(--s2) 96px;
 }
+body:has(.composer .card) .guscio {
+  padding-bottom: 360px;
+}
 
 .guscio--largo { max-width: 1100px; }
 
@@ -299,10 +302,18 @@ a { color: var(--foglia); }
   position: fixed;
   left: 0; right: 0; bottom: 0;
   padding: var(--s2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
   background: linear-gradient(to top, var(--carta) 70%, transparent);
 }
+.composer .card {
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
 .composer form {
-  max-width: 720px; margin: 0 auto;
+  max-width: 720px; margin: 0 auto; width: 100%;
   display: flex; gap: var(--s1);
   background: var(--carta-alta);
   border: 1px solid var(--linea);

@@ -802,10 +802,38 @@ def test_u_p_ciao_non_e_un_intent_a_caso(anna, contesto, llm_finto):
         ("quali turni ho questa settimana?", "turni_miei"),
         ("chi copre giovedì pomeriggio?", "copri"),
         ("giovedì ho lezione di pianoforte", "preferenza"),
+        ("il giovedì pomeriggio suono il piano", "preferenza"),
         ("generami la bozza della settimana", "comando_ciclo"),
         ("il pesce è fresco?", "sconosciuto"),
     ):
         assert agente_copilot.AGENTE._intent_det(frase) == atteso, frase
+
+
+def test_suono_il_piano_apre_la_preview(client, sessione_di):
+    """UC-07 non è solo la parola «pianoforte»: «suono il piano» è la stessa cosa.
+
+    Senza «pomeriggio» nel testo il vincolo è comunque il pomeriggio: suonare
+    il piano non è un giorno intero. E la risposta sta **nel composer**, non
+    in cima alla pagina: dopo il 303 gli occhi restano sul campo, e una card
+    sopra i turni sembra «nessuna risposta».
+    """
+    sessione_di("anna-mondora")
+    r = client.post(
+        "/copilota",
+        data={"testo": "suono il piano il giovedì"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].endswith("#copilota")
+
+    html = client.get("/home").text
+    assert 'data-tipo="scheda-preview"' in html
+    assert "no_pomeriggio: gio" in html
+    assert "no_turno" not in html
+    composer = html.split('class="composer"')[1]
+    assert 'data-tipo="scheda-preview"' in composer
+    assert "Conferma" in composer
+    assert "disabled" not in composer
 
 
 def test_u_p_cella(client, sessione_di):

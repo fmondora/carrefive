@@ -46,6 +46,12 @@ _FASCE = {
 
 _NEGAZIONE = re.compile(r"\b(non posso|non riesco|no|niente|evitare|libera|libero|impegn)", re.I)
 
+#: attività che implicano una fascia se il testo non la dice. «suono il piano»
+#: è il pomeriggio (UC-07), non un giorno intero.
+_FASCIA_DA_ATTIVITA = (
+    (re.compile(r"\b(?:pianoforte|suono il piano|lezione di piano)\b"), "pomeriggio"),
+)
+
 
 @dataclass(frozen=True, slots=True)
 class Riduzione:
@@ -70,6 +76,11 @@ def deriva_vincolo(testo: str) -> Riduzione:
         if re.search(rf"\b{parola}\w*\b", basso):
             fascia = nome
             break
+    if not fascia:
+        for rx, nome in _FASCIA_DA_ATTIVITA:
+            if rx.search(basso):
+                fascia = nome
+                break
 
     if fascia and giorno:
         vincolo = f"no_{fascia}: {giorno}"

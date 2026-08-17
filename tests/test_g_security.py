@@ -22,6 +22,12 @@ from .conftest import SETTIMANA, SETTIMANA_PROSSIMA
 # --- G1 ----------------------------------------------------------------------
 
 
+def test_g1_suono_il_piano_e_il_pomeriggio_anche_senza_dirlo():
+    """«suono il piano il giovedì» è il pomeriggio, non il giorno intero."""
+    assert privacy.deriva_vincolo("suono il piano il giovedì").vincolo == "no_pomeriggio: gio"
+    assert privacy.deriva_vincolo("il giovedì suono il piano").vincolo == "no_pomeriggio: gio"
+
+
 def test_g1_la_storia_resta_a_lei_il_vincolo_va_al_modello(anna):
     riduzione = privacy.deriva_vincolo("giovedì pomeriggio ho lezione di pianoforte")
     assert riduzione.vincolo == "no_pomeriggio: gio"

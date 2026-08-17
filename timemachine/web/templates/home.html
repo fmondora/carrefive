@@ -55,17 +55,25 @@
     {% for w in widget if w.tipo == "compliance-block" %}{{ W.compliance_block(w, sblocco, blocco_scelto) }}{% endfor %}
     {% for w in widget if w.tipo == "coverage-gap" %}{% set ns.gap = true %}{{ W.coverage_gap(w, candidati, gap_scelto) }}{% endfor %}
     {% if candidati and not ns.gap %}{% for w in candidati %}{{ W.render(w) }}{% endfor %}{% endif %}
-    {% for w in widget if w.tipo not in ("compliance-block", "coverage-gap") %}{{ W.render(w) }}{% endfor %}
+    {% for w in widget if w.tipo not in ("compliance-block", "coverage-gap", "copilot-turn", "scheda-preview") %}{{ W.render(w) }}{% endfor %}
     {{ mie_card(turni, saldi, secondo) }}
   {% else %}
     {% if conferma %}{{ W.approval(conferma) }}{% endif %}
     {{ mie_card(turni, saldi, secondo) }}
     {% if candidati %}{% for w in candidati %}{{ W.render(w) }}{% endfor %}{% endif %}
-    {% for w in widget %}{{ W.render(w) }}{% endfor %}
+    {% for w in widget if w.tipo not in ("copilot-turn", "scheda-preview") %}{{ W.render(w) }}{% endfor %}
   {% endif %}
 </main>
 
-<div class="composer" data-spento="{{ 1 if copilota_spento else 0 }}">
+<div class="composer" id="copilota" data-spento="{{ 1 if copilota_spento else 0 }}">
+  {# La risposta sta dove si è scritto. Se c'è una preview, quella è il
+     turno: la card «preparata la modifica» sopra ruba lo spazio a Conferma. #}
+  {% set preview = widget | selectattr("tipo", "equalto", "scheda-preview") | list %}
+  {% if preview %}
+    {% for w in preview %}{{ W.render(w) }}{% endfor %}
+  {% else %}
+    {% for w in widget if w.tipo == "copilot-turn" %}{{ W.render(w) }}{% endfor %}
+  {% endif %}
   <form method="post" action="/copilota">
     <input name="testo" placeholder="{{ 'Copilota non disponibile' if copilota_spento else 'Scrivi al copilota…' }}"
            {% if copilota_spento %}disabled{% endif %} autocomplete="off">

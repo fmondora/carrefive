@@ -383,7 +383,9 @@ def copilota(request: Request, testo: str = Form("")):
         flusso["copilota_spento"] = True
     except Negato:
         flusso["widget"] = [vista.copilot_turn(agente_copilot.RIFIUTO_ALTRUI, [])]
-    return _verso_home()
+    # il fragment porta gli occhi sul composer: un 303 su /home riparte in
+    # cima, e la risposta lì sembra «il copilota non ha fatto niente».
+    return RedirectResponse("/home#copilota", status_code=303)
 
 
 # --- chip --------------------------------------------------------------------

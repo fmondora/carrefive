@@ -411,10 +411,11 @@ class Copilot:
         return ""
 
     def _è_preferenza(self, basso: str) -> bool:
+        # UC-07 è «suono il piano», non solo la parola da dizionario «pianoforte».
         return bool(
             re.search(
-                r"\b(?:ho (?:lezione|corso|pianoforte|scuola)|non posso|preferisc|no chiusura|"
-                r"vorrei (?:non|evitare)|sono impegnat)",
+                r"\b(?:ho (?:lezione|corso|pianoforte|scuola)|suono il piano|lezione di piano|pianoforte|"
+                r"non posso|preferisc|no chiusura|vorrei (?:non|evitare)|sono impegnat)",
                 basso,
             )
         )
