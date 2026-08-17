@@ -13,10 +13,11 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from ..domain.modelli import Piano
+from ..domain.modelli import RIPOSO, Piano, Turno
 from ..domain.ore import giorni_consecutivi_lavorati, ore_settimana, riposo_fra_turni
 from ..domain.proposta import Proposta
 from ..kb import persone as kb_persone
+from ..kb.celle import formatta_cella, parse_cella
 from ..orchestrator.contesto import Contesto
 from .base import registra
 
@@ -29,6 +30,12 @@ MIN_RIPOSO_ASSOLUTO = 9.0
 MAX_GIORNI_CONSECUTIVI = 6
 MAX_ORE_GIORNO_MINORE = 8.0
 ORA_MASSIMA_MINORE = 22
+
+#: quante celle si propongono per sciogliere un blocco. È una costante sua:
+#: `MAX_CANDIDATI` conta **persone** per un buco, `MAX_TOCCATI` conta **righe**
+#: di preview. Valgono tutte 8 per caso, non perché siano lo stesso numero —
+#: unificarle legherebbe tre decisioni diverse a un'unica costante (Book 09).
+MAX_CELLE_SBLOCCO = 8
 
 
 @dataclass(slots=True)
@@ -165,6 +172,122 @@ def verifica_piano(piano: Piano, schede: dict | None = None) -> list[Violazione]
 
 def pubblicabile(violazioni: list[Violazione]) -> bool:
     return not any(v.gravita == "blocco" for v in violazioni)
+
+
+# --- il veto agibile ---------------------------------------------------------
+
+
+def _copia(piano: Piano) -> Piano:
+    """Copia usa-e-getta per simulare una mossa senza toccare la bozza."""
+    return Piano(
+        settimana=piano.settimana,
+        punto_vendita=piano.punto_vendita,
+        stato=piano.stato,
+        note_settimana=dict(piano.note_settimana),
+        turni={slug: dict(giorni) for slug, giorni in piano.turni.items()},
+        fonte=piano.fonte,
+    )
+
+
+def _e_la_stessa(v: Violazione, riferimento: dict) -> bool:
+    """Stessa persona, stessa regola, stesso giorno se il giorno c'è."""
+    return (
+        v.persona == riferimento.get("persona")
+        and v.regola == riferimento.get("regola")
+        and (not riferimento.get("data") or v.data == riferimento.get("data"))
+    )
+
+
+def celle_che_sciolgono(
+    piano: Piano,
+    violazione: dict,
+    schede: dict | None = None,
+    tetto: int = MAX_CELLE_SBLOCCO,
+) -> list[dict]:
+    """Le celle che, cambiate **da sole**, tolgono questa violazione.
+
+    Compliance non riscrive (`01` §4.3): propone, e l'umano conferma con
+    `sposta-turno`. Il veto resta; diventa agibile (Book 08, «Blocco CCNL vs
+    pubblica»). Senza questo il blocco è testo e la settimana non si chiude
+    mai — il manager torna al foglio.
+
+    Ogni mossa viene **simulata** su una copia del piano e riverificata: una
+    lista di celle che «forse» aiutano è peggio di nessuna lista, perché il
+    manager le prova una a una e poi smette di fidarsi. Si scarta anche la
+    mossa che aprirebbe un blocco nuovo sulla stessa persona.
+
+    L'ordine decide **chi sopravvive al tetto**, non come si legge: si tengono
+    le mosse che costano meno a chi lavora (togliere uno spezzone prima di
+    bruciare il giorno intero). Sulla card poi ognuna sta sulla sua cella, che
+    è dove il manager la cerca.
+    """
+    schede = schede if schede is not None else kb_persone.per_slug()
+    slug = str(violazione.get("persona") or "")
+    if not slug:
+        return []
+
+    if violazione.get("data"):
+        try:
+            giorni = [dt.date.fromisoformat(str(violazione["data"]))]
+        except ValueError:
+            return []
+    else:
+        giorni = [t.data for t in piano.della_persona(slug) if t.lavorato]
+
+    ore_prima = ore_settimana(piano, slug)
+    blocchi_prima = {
+        (v.regola, v.data)
+        for v in verifica_piano(piano, schede)
+        if v.gravita == "blocco" and v.persona == slug
+    }
+
+    proposte: list[dict] = []
+    for data in giorni:
+        turno = piano.turno(slug, data)
+        if turno is None or not turno.lavorato:
+            continue
+        celle: list[str] = []
+        if len(turno.spezzoni) > 1:
+            # togliere **uno** spezzone: il giorno resta, la persona lavora meno
+            for i in range(len(turno.spezzoni)):
+                resto = tuple(s for j, s in enumerate(turno.spezzoni) if j != i)
+                celle.append(formatta_cella(resto, None, turno.note))
+        celle.append(RIPOSO)
+
+        for cella in celle:
+            spezzoni, badge, note = parse_cella(cella)
+            prova = _copia(piano)
+            prova.imposta(
+                Turno(
+                    persona=slug, data=data, spezzoni=spezzoni,
+                    badge=badge, note=note, grezzo=cella,
+                )
+            )
+            restanti = verifica_piano(prova, schede)
+            if any(_e_la_stessa(v, violazione) for v in restanti):
+                continue  # non la scioglie: fuori
+            nuovi = {
+                (v.regola, v.data)
+                for v in restanti
+                if v.gravita == "blocco" and v.persona == slug
+            }
+            if nuovi - blocchi_prima:
+                continue  # scioglie questo e ne apre un altro: non è una mossa
+            ore_dopo = ore_settimana(prova, slug)
+            proposte.append(
+                {
+                    "persona": slug,
+                    "data": data.isoformat(),
+                    "giorno": turno.giorno,
+                    "prima": turno.etichetta().replace("–", "-"),
+                    "fascia": cella,
+                    "ore_dopo": ore_dopo,
+                    "ore_perse": round(ore_prima - ore_dopo, 2),
+                }
+            )
+
+    proposte.sort(key=lambda p: (p["ore_perse"], p["data"]))
+    return proposte[:tetto]
 
 
 class Compliance:

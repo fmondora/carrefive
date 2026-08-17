@@ -344,7 +344,12 @@ def test_u_sposta_400(client, sessione_di, manager):
 
 
 def test_u_sposta_conferma(client, sessione_di, manager):
-    """U-sposta-conferma: senza conferma non si scrive niente sul piano."""
+    """U-sposta-conferma: senza conferma non si scrive niente sul piano.
+
+    A2: la preview dice **prima → dopo**. `imposta` sostituisce la cella del
+    giorno, non aggiunge un pezzo: coprire un buco con chi è già in turno ne
+    apre un altro, e va detto *prima* di confermare (Book 08, «Layer 2»).
+    """
     sessione_di("francesco")
     client.post("/chip/genera-bozza")
     ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
@@ -355,7 +360,11 @@ def test_u_sposta_conferma(client, sessione_di, manager):
         data={"persona": "matteo", "data": SETTIMANA_PROSSIMA.isoformat(), "fascia": "6-12"},
         follow_redirects=True,
     )
-    assert "Metto Matteo lunedì 06/07 in 6-12?" in r.text
+    domanda = re.search(r'class="domanda">([^<]+)<', r.text).group(1)
+    assert "Matteo lunedì 06/07" in domanda
+    assert prima.replace("–", "-") in domanda  # il turno che si perde
+    assert "6-12" in domanda  # e quello che arriva
+    assert "→" in domanda
     assert ciclo.bozza.piano.turno("matteo", SETTIMANA_PROSSIMA).etichetta() == prima
 
 
@@ -532,6 +541,198 @@ def test_u_me_senza_overlay_altra_settimana(client, sessione_di, manager):
     html = client.get("/home").text
     prima_card = html.split('data-tipo="person-shifts"')[1].split("</section>")[0]
     assert "proposta in bozza" not in prima_card
+
+
+# --- canary slice A2 (Book 07 · specs `02` Loop A2) --------------------------
+
+
+def _carta_candidato(html: str) -> str:
+    """La prima card candidato: quella dentro l'esito del tap, non la mia."""
+    return html.split('<div class="esito">')[1].split("</section>")[1].split("</section>")[0]
+
+
+def test_u_blocco_gesto(client, sessione_di, manager, llm_finto):
+    """U-blocco-gesto: la violazione è un atto, non una constatazione.
+
+    Il blocco è l'eredità del template (Matteo era già a 52h la settimana
+    prima). Compliance non lo accorcia da sola — è una decisione umana — ma
+    senza un gesto la settimana non si chiude mai e il manager torna al foglio
+    (Book 08, «Blocco CCNL vs pubblica»).
+    """
+    import datetime as dt
+
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
+    blocco = next(v for v in ciclo.bozza.violazioni if v["regola"] == "ore-massime")
+    assert blocco["persona"] == "matteo"
+    assert not ciclo.bozza.pubblicabile
+
+    llm_finto.chiamate.clear()
+    r = client.post(
+        "/chip/consulta",
+        data={"motivo": "blocco", "persona": blocco["persona"], "regola": blocco["regola"]},
+        follow_redirects=True,
+    )
+    html = r.text
+    assert llm_finto.chiamate == []  # il gesto è deterministico
+
+    # l'esito vive dentro la card del blocco, prima della card dei buchi
+    esito = html.split('<div class="esito">')[1].split('data-tipo="coverage-gap"')[0]
+    assert 'data-tipo="rationale"' in esito
+    assert 'data-tipo="person-shifts"' in esito  # i suoi turni della bozza
+    assert "6–14" in esito  # e sono i turni della settimana in bozza
+    assert 'action="/chip/sposta-turno"' in esito  # almeno una mossa
+
+    # le mosse arrivano già verificate: la prima toglie davvero il blocco
+    from timemachine.agents.compliance import celle_che_sciolgono
+    from timemachine.kb import persone as kbp
+
+    mosse = celle_che_sciolgono(ciclo.bozza.piano, blocco, kbp.per_slug())
+    assert mosse, "il blocco della demo deve essere scioglibile da una cella sola"
+    assert len(mosse[0]["prima"].split(" / ")) > 1  # la più leggera è uno spezzone in meno
+
+    client.post(
+        "/chip/sposta-turno",
+        data={
+            "persona": mosse[0]["persona"],
+            "data": mosse[0]["data"],
+            "fascia": mosse[0]["fascia"],
+            "conferma": "1",
+        },
+    )
+    assert all(v["regola"] != "ore-massime" for v in ciclo.bozza.violazioni)
+    assert ciclo.bozza.pubblicabile
+
+    # il veto resta un veto: si pubblica solo se **anche** accettata
+    assert "pubblica" not in ciclo.chip()
+    ciclo.accetta(manager)
+    assert "pubblica" in ciclo.chip()
+
+    # e la riga del blocco non c'è più
+    html = client.get("/home").text
+    assert "Non pubblicabile" not in html
+    del dt
+
+
+def test_una_segnalazione_non_e_un_atto(client, sessione_di, manager):
+    """Solo le violazioni aprono il gesto.
+
+    «41h su contratto 40h» non toglie `pubblica`: darle un bottone «come lo
+    sciolgo» direbbe che finché non la tocchi non chiudi la settimana.
+    """
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
+    bloccate = {v["persona"] for v in ciclo.bozza.violazioni}
+    segnalata = next(
+        s["persona"] for s in ciclo.bozza.segnalazioni if s["persona"] not in bloccate
+    )
+
+    html = client.get("/home").text
+    blocco = html.split('data-tipo="compliance-block"')[1].split("</section>")[0]
+    da_guardare = blocco.split("Da guardare")[1]
+    assert 'action="/chip/consulta"' not in da_guardare
+
+    r = client.post(
+        "/chip/consulta", data={"motivo": "blocco", "persona": segnalata}
+    )
+    assert r.status_code == 400  # non 500, e non un gesto finto
+    assert f"un blocco su «{segnalata}»" in r.text
+
+
+def test_u_gap_candidati_sotto_la_riga_tappata(client, sessione_di, manager):
+    """U-gap-candidati (A2): il risultato del tap sta sotto **quel** buco.
+
+    Prima i candidati finivano in fondo ai quindici buchi, sotto lo scroll e
+    per metà coperti dal composer: il tap sembrava non aver fatto niente.
+    """
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
+    gap = _primo_gap_con_candidati(ciclo)
+    assert gap is not None
+
+    html = client.post(
+        "/chip/consulta",
+        data={"data": gap["data"], "fascia": gap["fascia"], "reparto": gap["reparto"]},
+        follow_redirects=True,
+    ).text
+
+    # l'esito è dentro la card dei buchi, non dopo di essa
+    card_gap = html.split('data-tipo="coverage-gap"')[1].split("</section>")[0]
+    assert '<div class="esito">' in card_gap
+    assert 'data-tipo="rationale"' in card_gap
+
+    # ordine in DOM: rationale del tap → prima card candidato → pack
+    i_rationale = html.find('data-tipo="rationale"')
+    i_candidato = html.find('<div class="esito">')
+    i_pack = html.find('data-tipo="proposal-pack"')
+    assert i_rationale > 0 and i_candidato < i_pack
+    assert html.find('data-tipo="person-shifts"', i_candidato) < i_pack
+
+    # e la riga tappata è segnata
+    assert 'class="scelto"' in card_gap
+
+
+def test_niente_adesso_su_un_candidato_futuro(client, sessione_di, manager):
+    """«Adesso 10-14» su un martedì che deve arrivare è una bugia di orologio.
+
+    La card del candidato è puntata alla settimana in bozza: lì un «adesso»
+    non esiste, e stamparlo faceva leggere il lunedì della bozza come il turno
+    in corso (map A2, P1.3).
+    """
+    from timemachine import vista
+    from timemachine.security.authz import Attore
+
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
+    gap = _primo_gap_con_candidati(ciclo)
+    assert gap is not None
+
+    html = client.post(
+        "/chip/consulta",
+        data={"data": gap["data"], "fascia": gap["fascia"], "reparto": gap["reparto"]},
+        follow_redirects=True,
+    ).text
+
+    carta = _carta_candidato(html)
+    assert 'class="adesso' not in carta
+    assert "Settimana in bozza" in carta
+    # il soggetto è il buco: giorno e destinazione sono scritti sul bottone
+    assert gap["data"][8:10] in carta
+
+    # la mia card, che parte da oggi, l'«adesso» ce l'ha ancora
+    mia = vista.person_shifts("francesco", Attore("francesco", ("dipendente", "manager")), oggi=OGGI)
+    assert mia["mostra_adesso"] is True
+    futura = vista.person_shifts(
+        "matteo", Attore("francesco", ("dipendente", "manager")), oggi=SETTIMANA_PROSSIMA
+    )
+    assert futura["mostra_adesso"] is False and futura["adesso"] is None
+
+
+def test_scegli_variante_assente_con_una_variante(client, sessione_di, manager):
+    """Slice 8: una sola variante non è una scelta."""
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
+    assert len(ciclo.bozza.varianti) == 1
+    assert "scegli-variante" not in ciclo.chip()
+    assert "scegli-variante" not in client.get("/api/stato-ciclo").json()["chip"]
+    assert "scegli-variante" not in client.get("/home").text
+
+    ciclo.bozza.varianti = ciclo.bozza.varianti * 2  # due varianti: il bivio esiste
+    assert "scegli-variante" in ciclo.chip()
+
+
+def test_i_due_tetti_restano_due_costanti():
+    """Non si unificano: contano cose diverse (Book 09 slice 8)."""
+    from timemachine.agents.compliance import MAX_CELLE_SBLOCCO
+    from timemachine.agents.scheduling import MAX_CANDIDATI
+    from timemachine.web.app import MAX_TOCCATI
+
+    assert MAX_CANDIDATI == MAX_TOCCATI == MAX_CELLE_SBLOCCO == 8
 
 
 def test_la_chip_nuda_sposta_turno_non_e_nel_guscio(manager):

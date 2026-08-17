@@ -94,12 +94,17 @@ def person_shifts(
             diff = righe
             date_bozza = {dt.date.fromisoformat(r["data"]) for r in righe} & set(proposti)
 
+    #: «Adesso» è un orologio, non un'ancora: vale solo se la card parte da
+    #: **oggi**. Una card puntata alla settimana in bozza che dice «adesso
+    #: 10-14» sta parlando di un lunedì che deve ancora arrivare — sul
+    #: candidato di un buco di martedì è una bugia di orologio (Book 02 A2).
+    mostra_adesso = oggi == oggi_reale()
     adesso = None
     prossimi = []
     ora = adesso_reale().time()
     for turno in turni:
         segno = "bozza" if turno.data in date_bozza else ""
-        if turno.data == oggi and turno.lavorato:
+        if mostra_adesso and turno.data == oggi and turno.lavorato:
             in_corso = any(s.inizio <= ora <= s.fine for s in turno.spezzoni)
             if in_corso or adesso is None:
                 adesso = _turno_dict(turno, segno)
@@ -114,6 +119,8 @@ def person_shifts(
         "nome": persona.nome if persona else slug,
         "punto_vendita": persona.punto_vendita if persona else "",
         "adesso": adesso,
+        "mostra_adesso": mostra_adesso,
+        "riferimento": oggi.isoformat(),
         "prossimi": prossimi,
         "orizzonte": orizzonte,
         "ore_periodo": ore_turni([t for t in turni if t.data >= oggi]),
@@ -242,6 +249,7 @@ def candidati_gap(
     ]
     for slug in liberi:
         card = person_shifts(slug, attore, oggi=bozza.settimana, bozza=bozza)
+        attuale = bozza.piano.turno(slug, data)
         card["sposta"] = {
             "persona": slug,
             "data": data.isoformat(),
@@ -251,9 +259,60 @@ def candidati_gap(
             "etichetta_fascia": fascia,
             "reparto": reparto,
             "gia_in_turno": slug in in_turno,
+            # il soggetto della card è **il buco**, non la settimana di chi lo
+            # tappa: giorno e fascia stanno scritti sulla card (Book 02 A2)
+            "quando": quando,
+            # `imposta` sostituisce la cella-giorno: si dice cosa si perde
+            "prima": (attuale.etichetta().replace("–", "-") if attuale else ""),
         }
         fuori.append(card)
     return fuori
+
+
+def celle_blocco(
+    bozza: Bozza,
+    attore: Attore,
+    violazione: dict,
+    mosse: list[dict],
+) -> list[dict[str, Any]]:
+    """Dal blocco alle celle. **Nessun tipo nuovo**: `rationale` + `person-shifts`.
+
+    Stesso contratto del gap: un blocco è un buco che riguarda *una* persona.
+    Le mosse arrivano già calcolate e già verificate da
+    `compliance.celle_che_sciolgono` — `vista` non importa `agents/`
+    (`tests/test_confine.py`), e qui si mappa e basta.
+
+    Le mosse si attaccano **alla riga del giorno** a cui appartengono: la cella
+    è il posto dove il gesto ha senso, non un elenco di bottoni in fondo.
+    """
+    slug = str(violazione.get("persona") or "")
+    dettaglio = str(violazione.get("dettaglio") or "")
+    persona = kb_persone.leggi(slug)
+    nome = persona.nome if persona else slug
+
+    card = person_shifts(slug, attore, oggi=bozza.settimana, bozza=bozza)
+    per_giorno: dict[str, list[dict]] = {}
+    for m in mosse:
+        per_giorno.setdefault(str(m["data"]), []).append(m)
+    for riga in card["prossimi"]:
+        riga["mosse"] = per_giorno.get(riga["data"], [])
+    card["blocco"] = dettaglio
+
+    if mosse:
+        testo = (
+            f"{nome} — {dettaglio}. Ho provato le celle della sua settimana in bozza, "
+            f"una alla volta: {len(mosse)} bastano da sole a togliere il blocco. "
+            "Quale, lo decidi tu: accorciare una persona non è una cosa che faccio io."
+        )
+    else:
+        testo = (
+            f"{nome} — {dettaglio}. Nessuna singola cella della sua settimana toglie "
+            "il blocco: qui servono più giorni insieme, o una decisione fuori dal piano."
+        )
+    return [
+        rationale(testo, fonti=[f"kb/persone/{slug}.md"]),
+        card,
+    ]
 
 
 def compliance_block(violazioni: list[dict], segnalazioni: list[dict] | None = None) -> dict[str, Any]:

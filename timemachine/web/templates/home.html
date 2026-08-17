@@ -48,10 +48,13 @@
   {% if in_attesa %}
     {# Gerarchia della bozza (Book 02): la mano dopo l'occhio, e la casa
        persona resta — in fondo, ma resta. #}
+    {# L'esito di un tap si monta **dentro** la lista da cui è partito: sotto la
+       riga tappata, non sotto le altre quattordici (Book 02 Loop A2). #}
+    {% set ns = namespace(gap=false) %}
     {% if conferma %}{{ W.approval(conferma) }}{% endif %}
-    {% for w in widget if w.tipo == "compliance-block" %}{{ W.render(w) }}{% endfor %}
-    {% for w in widget if w.tipo == "coverage-gap" %}{{ W.render(w) }}{% endfor %}
-    {% if candidati %}{% for w in candidati %}{{ W.render(w) }}{% endfor %}{% endif %}
+    {% for w in widget if w.tipo == "compliance-block" %}{{ W.compliance_block(w, sblocco, blocco_scelto) }}{% endfor %}
+    {% for w in widget if w.tipo == "coverage-gap" %}{% set ns.gap = true %}{{ W.coverage_gap(w, candidati, gap_scelto) }}{% endfor %}
+    {% if candidati and not ns.gap %}{% for w in candidati %}{{ W.render(w) }}{% endfor %}{% endif %}
     {% for w in widget if w.tipo not in ("compliance-block", "coverage-gap") %}{{ W.render(w) }}{% endfor %}
     {{ mie_card(turni, saldi, secondo) }}
   {% else %}

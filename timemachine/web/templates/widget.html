@@ -24,14 +24,18 @@
     <div class="chip-riga"><span class="badge badge--attenzione">proposta in bozza</span></div>
   {% endif %}
 
-  <div class="etichetta">Adesso</div>
-  {% if w.adesso %}
-    <p class="adesso adesso--in-turno">{{ w.adesso.orario }}{% if w.adesso.mansioni %} · {{ w.adesso.mansioni|join(", ") }}{% endif %}</p>
-  {% else %}
-    <p class="adesso">—</p>
+  {# «Adesso» è un orologio: su una card puntata alla settimana in bozza non
+     c'è nessun adesso, e stamparlo sarebbe una bugia (Book 02 Loop A2). #}
+  {% if w.get("mostra_adesso", True) %}
+    <div class="etichetta">Adesso</div>
+    {% if w.adesso %}
+      <p class="adesso adesso--in-turno">{{ w.adesso.orario }}{% if w.adesso.mansioni %} · {{ w.adesso.mansioni|join(", ") }}{% endif %}</p>
+    {% else %}
+      <p class="adesso">—</p>
+    {% endif %}
   {% endif %}
 
-  <div class="etichetta">Prossimi</div>
+  <div class="etichetta">{% if w.get("mostra_adesso", True) %}Prossimi{% else %}Settimana in bozza{% endif %}</div>
   <ul class="prossimi">
     {% for t in w.prossimi %}
       <li class="{% if t.overlay == 'bozza' %}overlay-bozza{% endif %}">
@@ -39,6 +43,17 @@
         <span class="orario">{{ t.orario or t.badge }}</span>
         {% if t.mansioni %}<span class="mansione"><i class="punto-reparto"></i>{{ t.mansioni|join(", ") }}</span>{% endif %}
         {% if t.note %}<span class="mansione">{{ t.note }}</span>{% endif %}
+        {# il gesto sta sulla **cella**: qui la mossa toglie il blocco, e dice
+           già cosa si perde e dove arrivano le ore (Book 02 A2) #}
+        {% for m in t.mosse or [] %}
+          <form method="post" action="/chip/sposta-turno" class="mossa">
+            <input type="hidden" name="persona" value="{{ m.persona }}">
+            <input type="hidden" name="data" value="{{ m.data }}">
+            <input type="hidden" name="fascia" value="{{ m.fascia }}">
+            <button class="chip">{{ m.prima }} → {{ m.fascia }}</button>
+            <span class="mansione">{{ "%g"|format(m.ore_dopo) }}h</span>
+          </form>
+        {% endfor %}
       </li>
     {% else %}
       <li class="mansione">Nessun turno pubblicato nell'orizzonte.</li>
@@ -47,13 +62,16 @@
 
   <p class="ore-periodo">{{ "%g"|format(w.ore_periodo) }}h{% if w.contratto_ore %} su {{ "%g"|format(w.contratto_ore) }}{% endif %}</p>
 
-  {# candidato per un buco: il bersaglio è già qui, la chip non è mai nuda #}
+  {# candidato per un buco: il bersaglio è già qui, la chip non è mai nuda.
+     Il soggetto è il **buco**, quindi giorno e fascia stanno scritti. #}
   {% if w.sposta %}
     <form method="post" action="/chip/sposta-turno" class="chip-riga">
       <input type="hidden" name="persona" value="{{ w.sposta.persona }}">
       <input type="hidden" name="data" value="{{ w.sposta.data }}">
       <input type="hidden" name="fascia" value="{{ w.sposta.fascia }}">
-      <button class="chip chip--primaria">{{ ETICHETTE_CHIP["sposta-turno"] }}</button>
+      <button class="chip chip--primaria">
+        {{ w.sposta.quando }} · {{ w.sposta.prima or "—" }} → {{ w.sposta.fascia }}
+      </button>
       {% if w.sposta.gia_in_turno %}
         <span class="badge badge--attenzione">già in turno — confermi lo spostamento</span>
       {% endif %}
@@ -117,13 +135,14 @@
 {% endmacro %}
 
 {# --- coverage-gap / compliance-block ------------------------------------ #}
-{% macro coverage_gap(w) %}
+{% macro coverage_gap(w, candidati=None, scelto=None) %}
 <section class="card card--gap" data-tipo="coverage-gap">
   <h2>Buchi di copertura</h2>
   <ul class="prossimi">
     {# ogni riga è un atto, non una constatazione: porta ai candidati (Book 03) #}
     {% for g in w.buchi %}
-      <li>
+      {% set tappato = scelto and scelto.data == g.data and scelto.fascia == g.fascia and scelto.reparto == g.reparto %}
+      <li class="{% if tappato %}scelto{% endif %}">
         <form method="post" action="/chip/consulta" class="riga-atto">
           <input type="hidden" name="data" value="{{ g.data }}">
           <input type="hidden" name="fascia" value="{{ g.fascia }}">
@@ -133,6 +152,11 @@
           <span class="mansione">{{ g.reparto }} · mancano {{ "%g"|format(g.teste_mancanti) }}</span>
           <button class="chip">Chi può coprirlo</button>
         </form>
+        {# il soggetto è **questo** buco: l'esito sta qui sotto, non in fondo
+           agli altri quattordici (Book 02 Loop A2) #}
+        {% if tappato and candidati %}
+          <div class="esito">{% for c in candidati %}{{ render(c) }}{% endfor %}</div>
+        {% endif %}
       </li>
     {% else %}
       <li class="mansione">Nessun buco.</li>
@@ -141,16 +165,31 @@
 </section>
 {% endmacro %}
 
-{% macro compliance_block(w) %}
+{% macro compliance_block(w, sblocco=None, scelto=None) %}
 {# Blocchi e segnalazioni non si mescolano: i primi tolgono la chip `pubblica`,
-   le seconde sono cose da guardare — confonderle svuota entrambe. #}
+   le seconde sono cose da guardare — confonderle svuota entrambe. Solo i primi
+   sono un atto: una segnalazione non si «scioglie», si guarda (Book 02 A2). #}
 {% if w.violazioni or w.segnalazioni %}
 <section class="card {% if w.violazioni %}card--blocco{% endif %}" data-tipo="compliance-block">
   {% if w.violazioni %}
     <h2>Non pubblicabile</h2>
     <ul class="prossimi">
       {% for v in w.violazioni %}
-        <li><span class="orario">{{ v.persona }}</span><span class="mansione">{{ v.dettaglio }}</span></li>
+        {% set tappata = scelto and scelto.persona == v.persona and scelto.regola == v.regola %}
+        <li class="{% if tappata %}scelto{% endif %}">
+          <form method="post" action="/chip/consulta" class="riga-atto">
+            <input type="hidden" name="motivo" value="blocco">
+            <input type="hidden" name="persona" value="{{ v.persona }}">
+            <input type="hidden" name="regola" value="{{ v.regola }}">
+            <input type="hidden" name="data" value="{{ v.data }}">
+            <span class="orario">{{ v.persona }}</span>
+            <span class="mansione">{{ v.dettaglio }}</span>
+            <button class="chip">Come lo sciolgo</button>
+          </form>
+          {% if tappata and sblocco %}
+            <div class="esito">{% for c in sblocco %}{{ render(c) }}{% endfor %}</div>
+          {% endif %}
+        </li>
       {% endfor %}
     </ul>
   {% endif %}

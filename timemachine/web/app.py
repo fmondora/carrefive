@@ -352,7 +352,12 @@ def _render_home(request: Request, status_code: int = 200):
             "ciclo": ciclo.stato_visibile() if a.manager else None,
             "attivatore": a.attivatore,
             "widget": widget,
+            # l'esito di un tap si monta **sotto la riga tappata**: serve
+            # sapere quale riga era (Book 02 Loop A2)
             "candidati": flusso.get("candidati_gap"),
+            "gap_scelto": flusso.get("gap_scelto"),
+            "sblocco": flusso.get("sblocco"),
+            "blocco_scelto": flusso.get("blocco_scelto"),
             "conferma": flusso.get("conferma"),
             "copilota_spento": flusso.get("copilota_spento", False),
         },
@@ -404,8 +409,24 @@ async def chip(request: Request, nome: str):
 
     try:
         if nome == "consulta":
-            # Con un payload di gap è l'atto «chi può coprirlo»: deterministico,
-            # nessun prompt di mezzo. Senza payload resta il no-op di sempre.
+            # Con un payload è un atto deterministico, senza prompt di mezzo:
+            # «chi può coprirlo» su un buco, «come lo sciolgo» su un blocco.
+            # Senza payload resta il no-op di sempre.
+            if dati.get("persona") and str(dati.get("motivo") or "") == "blocco":
+                esigi_manager(a, "chip/consulta")
+                carte, violazione, mosse, problema = _celle_del_blocco(dati, ciclo, a)
+                if problema:
+                    flusso["widget"] = [vista.copilot_turn(problema, [])]
+                    return _render_home(request, status_code=400)
+                flusso["sblocco"] = carte
+                flusso["blocco_scelto"] = violazione
+                audit.accesso(
+                    a.slug,
+                    f"blocco_consultato/{violazione['persona']}/{violazione['regola']}",
+                    f"celle={len(mosse)}",
+                )
+                return _verso_home()
+
             if dati.get("data") and dati.get("fascia") and dati.get("reparto"):
                 esigi_manager(a, "chip/consulta")
                 candidati, problema = _candidati_del_gap(dati, ciclo, a)
@@ -413,6 +434,11 @@ async def chip(request: Request, nome: str):
                     flusso["widget"] = [vista.copilot_turn(problema, [])]
                     return _render_home(request, status_code=400)
                 flusso["candidati_gap"] = candidati
+                flusso["gap_scelto"] = {
+                    "data": str(dati["data"]),
+                    "fascia": str(dati["fascia"]),
+                    "reparto": str(dati["reparto"]),
+                }
                 audit.accesso(
                     a.slug,
                     f"gap_consultato/{dati['data']}/{dati['fascia']}/{dati['reparto']}",
@@ -429,11 +455,13 @@ async def chip(request: Request, nome: str):
 
         if nome == "genera-bozza":
             ciclo.genera_bozza(a)
+            _scarta_esiti(flusso)
             flusso["widget"] = _widget_bozza(ciclo, a)
             return _verso_home()
 
         if nome == "scegli-variante":
             ciclo.scegli_variante(a, int(dati.get("indice", 0)))
+            _scarta_esiti(flusso)
             flusso["widget"] = _widget_bozza(ciclo, a)
             return _verso_home()
 
@@ -466,6 +494,7 @@ async def chip(request: Request, nome: str):
                 return _verso_home()
             flusso.pop("conferma", None)
             ciclo.rifiuta(a, str(dati.get("motivo", "")))
+            _scarta_esiti(flusso)
             flusso["widget"] = []
             return _verso_home()
 
@@ -497,12 +526,18 @@ async def chip(request: Request, nome: str):
                 return _render_home(request, status_code=400)
 
             if conferma != "1":
-                nome_persona = kb_persone.leggi(bersaglio["persona"])
+                scheda = kb_persone.leggi(bersaglio["persona"])
+                nome_persona = scheda.nome if scheda else bersaglio["persona"]
                 _apri_conferma(
                     flusso,
+                    # **prima → dopo**, non solo la destinazione: `imposta`
+                    # sostituisce la cella del giorno, non aggiunge un pezzo.
+                    # Coprire pizze con chi è già in turno apre un altro buco,
+                    # e va detto prima di confermare (Book 08, «Layer 2»).
                     domanda=(
-                        f"Metto {nome_persona.nome if nome_persona else bersaglio['persona']} "
-                        f"{_giorno_esteso(bersaglio['data'])} in {bersaglio['fascia']}?"
+                        f"{nome_persona} {_giorno_esteso(bersaglio['data'])}: "
+                        f"{_cella_attuale(ciclo, bersaglio)} → {bersaglio['fascia']}. "
+                        "Sostituisco la cella di quel giorno?"
                     ),
                     azione="/chip/sposta-turno",
                     campi=bersaglio,
@@ -520,7 +555,7 @@ async def chip(request: Request, nome: str):
                 fascia=bersaglio["fascia"],
             )
             flusso.pop("conferma", None)
-            flusso.pop("candidati_gap", None)  # ricalcolati al prossimo tap
+            _scarta_esiti(flusso)  # ricalcolati al prossimo tap
             flusso["widget"] = _widget_bozza(ciclo, a)
             return _verso_home()
 
@@ -634,6 +669,62 @@ def _candidati_del_gap(
     dalle, alle = next((d, al) for n, d, al in FASCE if n == fascia)
     orario = f"{dalle.hour}-{alle.hour}"
     return vista.candidati_gap(ciclo.bozza, a, data, fascia, reparto, liberi, orario), ""
+
+
+def _celle_del_blocco(
+    dati: dict, ciclo: orchestratore.Ciclo, a: Attore
+) -> tuple[list[dict], dict, list[dict], str]:
+    """Valida la violazione tappata e monta le celle che la sciolgono.
+
+    Solo le **violazioni** aprono il gesto. Una segnalazione («41h su contratto
+    40h») non toglie la chip `pubblica`: darle un bottone «come lo sciolgo»
+    direbbe che finché non la tocchi non chiudi la settimana, e non è vero
+    (Book 02 A2, spec `02` Loop A2).
+    """
+    if ciclo.stato != "attesa_umano" or ciclo.bozza is None:
+        return [], {}, [], "Non c'è una bozza aperta: nessun blocco da sciogliere."
+
+    persona = str(dati.get("persona") or "").strip()
+    regola = str(dati.get("regola") or "").strip()
+    quando = str(dati.get("data") or "").strip()
+    trovate = [
+        v
+        for v in ciclo.bozza.violazioni
+        if v["persona"] == persona
+        and (not regola or v["regola"] == regola)
+        and (not quando or str(v.get("data") or "") == quando)
+    ]
+    if not trovate:
+        return [], {}, [], (
+            f"Non c'è (più) un blocco su «{persona}»: Compliance ha già rigirato la bozza."
+        )
+    violazione = trovate[0]
+
+    from ..agents.compliance import celle_che_sciolgono
+
+    mosse = celle_che_sciolgono(ciclo.bozza.piano, violazione, kb_persone.per_slug())
+    return vista.celle_blocco(ciclo.bozza, a, violazione, mosse), violazione, mosse, ""
+
+
+def _cella_attuale(ciclo: orchestratore.Ciclo, bersaglio: dict) -> str:
+    """Cosa c'è **adesso** in quella cella: il «prima» della preview."""
+    if ciclo.bozza is None:
+        return "—"
+    turno = ciclo.bozza.piano.turno(
+        bersaglio["persona"], dt.date.fromisoformat(bersaglio["data"])
+    )
+    return (turno.etichetta().replace("–", "-") if turno else "") or "—"
+
+
+def _scarta_esiti(flusso: dict[str, Any]) -> None:
+    """L'esito di un tap vale per **quella** bozza.
+
+    Dopo uno spostamento (o una bozza nuova) candidati e celle di sblocco sono
+    già vecchi, e una lista vecchia è peggio di nessuna lista: si ricalcola al
+    prossimo tap, che costa millisecondi.
+    """
+    for chiave in ("candidati_gap", "gap_scelto", "sblocco", "blocco_scelto"):
+        flusso.pop(chiave, None)
 
 
 def _bersaglio_sposta(dati: dict, ciclo: orchestratore.Ciclo) -> tuple[dict, str]:

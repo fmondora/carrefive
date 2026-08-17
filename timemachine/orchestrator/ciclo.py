@@ -78,6 +78,10 @@ class Ciclo:
 
     def chip(self) -> list[str]:
         base = list(CHIP_PER_STATO.get(self.stato, ("consulta",)))
+        # Una sola variante non è una scelta: la chip prometterebbe un bivio
+        # che non c'è, e `varianti_default` è 1 (Book 02 A2, spec `02` §Loop A2).
+        if not self.bozza or len(self.bozza.varianti) <= 1:
+            base = [c for c in base if c != "scegli-variante"]
         if self.stato == "attesa_umano" and self.bozza and self.bozza.accettata:
             base = [c for c in base if c != "accetta-bozza"]
             if self.bozza.pubblicabile:

@@ -97,11 +97,33 @@ a { color: var(--foglia); }
 .prossimi li {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: var(--s2);
   padding: 6px 0;
   border-bottom: 1px solid var(--linea);
   font-variant-numeric: tabular-nums;
 }
+
+/* Una riga che è un atto: buco, violazione, mossa sulla cella. */
+.riga-atto {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  flex: 1 0 100%;
+}
+
+.mossa { display: flex; align-items: baseline; gap: var(--s1); }
+
+/* Il risultato di un tap vive **sotto la riga tappata**: il soggetto è quel
+   buco (o quella persona), non gli altri quattordici (Book 02 Loop A2). */
+.prossimi li.scelto {
+  box-shadow: inset 3px 0 0 var(--ambra-gap);
+  padding-left: var(--s1);
+}
+
+.esito { flex: 1 0 100%; margin-top: var(--s2); }
+.esito .card { margin: 0 0 var(--s2); }
 
 .prossimi li:last-child { border-bottom: none; }
 .prossimi .giorno { min-width: 3ch; color: var(--inchiostro-muto); }
