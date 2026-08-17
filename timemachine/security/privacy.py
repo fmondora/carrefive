@@ -10,6 +10,7 @@ uguale ogni volta (`05` §5).
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 from dataclasses import dataclass
 
@@ -98,9 +99,35 @@ def vincoli_operativi(preferenze: list[Preferenza]) -> list[str]:
     return [p.operativa() for p in preferenze if p.vincolo and p.vincolo != "da_chiarire"]
 
 
-def viola(vincolo: str, giorno: str, inizio_ora: int) -> bool:
-    """Il vincolo morbido è violato da questo spezzone? Usato in rationale."""
-    m = re.match(r"no_(\w+)(?::\s*(\w+))?", vincolo or "")
+#: l'ambito appeso alla forma operativa: `no_turno: gio @2026-07-02`
+_AMBITO = re.compile(r"@(\d{4}-\d{2}-\d{2})\s*$")
+
+
+def ambito(vincolo: str) -> str:
+    """La data a cui il vincolo è limitato, se c'è. Stringa vuota = ricorrente."""
+    m = _AMBITO.search(vincolo or "")
+    return m.group(1) if m else ""
+
+
+def viola(
+    vincolo: str, giorno: str, inizio_ora: int, data: dt.date | str | None = None
+) -> bool:
+    """Il vincolo morbido è violato da questo spezzone? Usato in rationale.
+
+    Se il vincolo porta un ambito (`@2026-07-02`) vale **solo** quel giorno:
+    gli altri giovedì non sono violati. Senza la data del turno non si può
+    dire, e allora si risponde come prima — sul giorno della settimana: meglio
+    una segnalazione in più che un vincolo perso in silenzio.
+    """
+    vincolo = vincolo or ""
+    solo_il = ambito(vincolo)
+    if solo_il:
+        vincolo = _AMBITO.sub("", vincolo).strip()
+        if data is not None:
+            quando = data.isoformat() if isinstance(data, dt.date) else str(data)
+            if quando != solo_il:
+                return False
+    m = re.match(r"no_(\w+)(?::\s*(\w+))?", vincolo)
     if not m:
         return False
     fascia, g = m.group(1), (m.group(2) or "")

@@ -82,6 +82,42 @@ def test_e3_preferenza_onorata_o_spiegata(manager):
         )
 
 
+def test_e3_ter_lambito_entra_nella_decisione_solo_il_suo_giorno(manager):
+    """Un vincolo per un giorno solo non tocca gli altri giovedì (`02` P2).
+
+    L'osservabile non è la cella — se nessuno può coprire, Scheduling lascia il
+    turno e *lo spiega* (E3). È se il vincolo è **entrato** nella decisione: la
+    nota compare per il giovedì in ambito e non per gli altri.
+    """
+    giovedi = SETTIMANA_PROSSIMA + dt.timedelta(days=3)
+    fuori = giovedi - dt.timedelta(days=7)
+
+    def note_per(data_ambito: str) -> str:
+        kb_persone.rimuovi_preferenza("anna-mondora", "no_mattina: gio")
+        kb_persone.salva_preferenza(
+            "anna-mondora",
+            Preferenza(
+                vincolo="no_mattina: gio",
+                storia="visita",
+                origine="confermata",
+                data=data_ambito,
+            ),
+        )
+        contesto = ctx.carica(SETTIMANA_PROSSIMA)
+        proposta = agenti.agente("scheduling").nel_ciclo(contesto)
+        return " ".join(
+            n for n in proposta.payload["note"] if "anna-mondora" in n and "no_mattina" in n
+        )
+
+    # un altro giovedì: il vincolo non riguarda questa settimana
+    assert note_per(fuori.isoformat()) == ""
+    # il giovedì in bozza: ci entra, e la rationale lo nomina con l'ambito
+    dentro = note_per(giovedi.isoformat())
+    assert dentro and giovedi.isoformat() in dentro
+    # senza ambito resta la regola settimanale di sempre
+    assert note_per("")
+
+
 def test_e3_bis_il_prompt_non_contiene_la_storia(manager):
     kb_persone.salva_preferenza(
         "anna-mondora",

@@ -147,10 +147,15 @@ class Preferenza:
     vincolo: str  # forma operativa: "no_pomeriggio: gio"
     storia: str = ""  # l'aneddoto: "lezione di pianoforte"
     origine: str = "dichiarata"  # dichiarata | confermata | da-confermare
+    #: **ambito**, non firma: se c'è, il vincolo vale solo per quella data.
+    #: Toccare un giovedì non vuol dire «mai più di giovedì» (Book 02 Loop P2).
     data: str = ""
 
     def operativa(self) -> str:
-        return self.vincolo
+        """Ciò che vedono manager e modello. L'ambito viaggia col vincolo:
+        un `no_turno: gio` che vale per un giorno solo, detto senza la data,
+        è una regola diversa da quella che la persona ha dichiarato."""
+        return f"{self.vincolo} @{self.data}" if self.data else self.vincolo
 
 
 @dataclass(slots=True)

@@ -125,6 +125,16 @@ a { color: var(--foglia); }
 }
 .riga-tap:hover .orario { text-decoration: underline dotted; }
 
+/* Senza questa, la riga si prende l'anello di focus di default del browser:
+   blu fuori palette e a offset zero, cioè appoggiato sul testo — «sab» e
+   «pizze» finivano dentro il bordo (map P2 §P1.5). L'offset lo manda nello
+   spazio fra le righe, dove non copre niente. */
+.riga-tap:focus-visible {
+  outline: 2px solid var(--foglia);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
 /* Una riga che è un atto: buco, violazione, mossa sulla cella. */
 .riga-atto {
   display: flex;

@@ -61,8 +61,9 @@ TOOL_DIPENDENTE: tuple[str, ...] = ("mostra_turni", "mostra_saldi", "prepara_pre
 
 SALUTO = (
     "Ciao. Qui ci sono i tuoi turni e i tuoi saldi, sempre. "
-    "Posso preparare una preferenza da confermare tu: scrivimi «giovedì pomeriggio "
-    "non posso», oppure tocca un giorno nei tuoi turni."
+    "Posso preparare una preferenza da confermare tu: tocca un giorno nei tuoi turni "
+    "e vale solo per quel giorno, oppure scrivimi «giovedì pomeriggio non posso» "
+    "per tutti i giovedì."
 )
 NON_HO_CAPITO = (
     "Non ho capito cosa ti serve. So dirti i tuoi turni e i tuoi saldi, e "
@@ -381,12 +382,12 @@ class Copilot:
         else:
             proposta = self._consulta_scheduling(attore, domanda, contesto)
 
+        # Il rationale, non cinque settimane altrui. Una consulta risponde a
+        # una domanda; srotolare i turni di chi è stato nominato è un dump che
+        # nessuno ha chiesto, e mette a schermo dati di persone che non sono
+        # nella stanza (`05` §4.2, Book P2.2). Chi serve davvero si apre dalla
+        # bozza che lo tocca.
         widget.append(vista.rationale(proposta.rationale, proposta.fonti, proposta.confidenza))
-        for slug in proposta.payload.get("persone", [])[:5]:
-            try:
-                widget.append(self._mostra_turni(attore, slug))
-            except Negato:
-                continue
         fatti = proposta.rationale
         testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
         turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)

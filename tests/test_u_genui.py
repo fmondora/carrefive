@@ -847,6 +847,109 @@ def test_u_p_cella(client, sessione_di):
     )
 
 
+def test_u_p_data(client, sessione_di):
+    """U-p-data: toccare un giovedì dichiara **quel** giovedì.
+
+    Il vocabolario dei vincoli è settimanale (`no_turno: gio`), e lasciarlo
+    così faceva promettere una data al gesto e salvare una ricorrenza: chi
+    tocca il 02/07 perché ha una visita si ritrova senza giovedì per sempre
+    (map P2 §P0.1). La regola settimanale resta possibile, ma si chiede.
+    """
+    import datetime as dt
+
+    from timemachine.security import privacy
+
+    sessione_di("anna-mondora")
+    giovedi = dt.date(2026, 7, 2)
+    altro_giovedi = dt.date(2026, 7, 9)
+    assert giovedi.weekday() == altro_giovedi.weekday() == 3
+
+    html = client.post(
+        "/chip/consulta",
+        data={"motivo": "preferenza", "data": giovedi.isoformat()},
+        follow_redirects=True,
+    ).text
+    preview = html.split('data-tipo="scheda-preview"')[1].split("</section>")[0]
+    assert "solo il 02/07" in preview  # in italiano, non solo il token
+    assert "tutti i giovedì" in preview.lower()  # la ricorrenza è un'altra scelta
+    assert f'name="data" value="{giovedi.isoformat()}"' in preview
+
+    client.post(
+        "/chip/salva-preferenza",
+        data={
+            "persona": "anna-mondora",
+            "vincolo": "no_turno: gio",
+            "storia": "visita",
+            "data": giovedi.isoformat(),
+            "conferma": "1",
+        },
+    )
+    pref = next(
+        p for p in kb_persone.leggi("anna-mondora").preferenze if p.vincolo == "no_turno: gio"
+    )
+    assert pref.data == giovedi.isoformat()
+
+    # il 02/07 è violato, il 09/07 no: stesso giorno della settimana
+    operativa = pref.operativa()
+    assert privacy.viola(operativa, "gio", 7, giovedi) is True
+    assert privacy.viola(operativa, "gio", 7, altro_giovedi) is False
+
+    # la chip della ricorrenza butta l'ambito: torna la regola settimanale
+    client.post(
+        "/chip/salva-preferenza",
+        data={
+            "persona": "anna-mondora",
+            "vincolo": "no_turno: gio",
+            "storia": "visita",
+            "data": giovedi.isoformat(),
+            "conferma": "ricorrente",
+        },
+    )
+    tutte = [
+        p for p in kb_persone.leggi("anna-mondora").preferenze if p.vincolo == "no_turno: gio"
+    ]
+    ricorrente = next(p for p in tutte if not p.data)
+    assert privacy.viola(ricorrente.operativa(), "gio", 7, altro_giovedi) is True
+    # e non ha cancellato quella del 02/07: sono due dichiarazioni diverse
+    assert any(p.data == giovedi.isoformat() for p in tutte)
+
+
+def test_u5_nl_resta_ricorrente(client, sessione_di):
+    """Il testo libero non ha un ambito: «giovedì ho pianoforte» è ogni giovedì.
+
+    È il mestiere di UC-07, e P2 non lo tocca: quello che cambia è solo il
+    gesto muto sulla cella.
+    """
+    import datetime as dt
+
+    from timemachine.security import privacy
+
+    sessione_di("anna-mondora")
+    client.post("/copilota", data={"testo": "giovedì pomeriggio ho pianoforte"})
+    html = client.get("/home").text
+    preview = html.split('data-tipo="scheda-preview"')[1].split("</section>")[0]
+    assert "solo il" not in preview  # nessun ambito da un testo libero
+    assert "tutti i" not in preview.lower()  # e nessuna chip di ricorrenza
+
+    client.post(
+        "/chip/salva-preferenza",
+        data={
+            "persona": "anna-mondora",
+            "vincolo": "no_pomeriggio: gio",
+            "storia": "lezione di pianoforte",
+            "conferma": "1",
+        },
+    )
+    pref = next(
+        p
+        for p in kb_persone.leggi("anna-mondora").preferenze
+        if p.vincolo == "no_pomeriggio: gio"
+    )
+    assert pref.data == ""  # niente ambito: vale ogni giovedì
+    for quando in (dt.date(2026, 7, 2), dt.date(2026, 7, 9), dt.date(2026, 7, 16)):
+        assert privacy.viola(pref.operativa(), "gio", 14, quando) is True
+
+
 def test_la_cella_di_un_collega_non_e_un_gesto(client, sessione_di, manager):
     """Il bersaglio è sempre chi tocca: nessuno dichiara un vincolo per altri."""
     sessione_di("francesco")

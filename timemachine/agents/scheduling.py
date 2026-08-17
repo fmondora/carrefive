@@ -252,7 +252,12 @@ class Scheduling:
                 if turno is None or not turno.lavorato:
                     continue
                 for vincolo in vincoli:
-                    if not any(privacy.viola(vincolo, turno.giorno, s.inizio.hour) for s in turno.spezzoni):
+                    # `giorno` è la data vera: serve per i vincoli che valgono
+                    # per un giorno solo e non per tutti i giovedì (`02` P2)
+                    if not any(
+                        privacy.viola(vincolo, turno.giorno, s.inizio.hour, giorno)
+                        for s in turno.spezzoni
+                    ):
                         continue
                     reparto = reparto_di(list(turno.mansioni) or persona.nomi_mansioni())
                     sostituti = [

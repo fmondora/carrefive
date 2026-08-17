@@ -87,7 +87,7 @@ def _parse_preferenze(righe: list[str]) -> list[Preferenza]:
         d = re.search(r"(\d{4}-\d{2}-\d{2})", origine)
         if d:
             data = d.group(1)
-            origine = origine.replace(data, "").strip()
+            origine = re.sub(r"\bsolo\b", "", origine.replace(data, "")).strip()
         fuori.append(
             Preferenza(vincolo=vincolo, storia=storia, origine=origine or "dichiarata", data=data)
         )
@@ -222,7 +222,10 @@ def _sostituisci_sezione(testo: str, nome: str, corpo: str) -> str:
 def formatta_preferenza(pref: Preferenza) -> str:
     origine = pref.origine or "dichiarata"
     if pref.data:
-        origine = f"{origine} {pref.data}"
+        # «solo» perché la data è l'**ambito**, non la firma: senza quella
+        # parola la riga si legge «confermata il 02/07», che è il vecchio
+        # significato del campo e il contrario di quello nuovo (`02` P2).
+        origine = f"{origine} solo {pref.data}"
     riga = f"- **{pref.vincolo}** — _{origine}_"
     if pref.storia:
         riga += f" — storia: «{pref.storia}»"
@@ -234,7 +237,10 @@ def salva_preferenza(slug: str, pref: Preferenza) -> Persona:
     p = percorso(slug)
     testo = p.read_text(encoding="utf-8")
     persona = parse(testo, slug)
-    altre = [x for x in persona.preferenze if x.vincolo != pref.vincolo]
+    # La chiave è vincolo **+ ambito**: «no_turno: gio solo il 02/07» e «no_turno:
+    # gio ogni settimana» sono due dichiarazioni diverse, e due giovedì diversi
+    # pure. Deduplicare sul solo vincolo faceva sparire la precedente (`02` P2).
+    altre = [x for x in persona.preferenze if (x.vincolo, x.data) != (pref.vincolo, pref.data)]
     corpo = "\n".join(formatta_preferenza(x) for x in [*altre, pref])
     _scrivi(slug, _sostituisci_sezione(testo, "Preferenze", corpo))
     return leggi(slug)  # type: ignore[return-value]

@@ -174,17 +174,49 @@ def diff_edit(bozza: Bozza, slug: str) -> dict[str, Any]:
     }
 
 
-def scheda_preview(slug: str, testo_libero: str) -> dict[str, Any]:
-    """Approval card su `kb/persone/{slug}.md`: storia **e** vincolo (`05` §4.2)."""
+GIORNI_ESTESI = ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica")
+
+
+def scheda_preview(slug: str, testo_libero: str, data: str = "") -> dict[str, Any]:
+    """Approval card su `kb/persone/{slug}.md`: storia **e** vincolo (`05` §4.2).
+
+    `data` è l'**ambito**: con una data il vincolo vale solo quel giorno, e la
+    card lo dice in italiano («solo il 02/07») invece di lasciare che sia il
+    token `no_turno: gio` a farlo capire — che vuol dire il contrario.
+    Chi vuole la regola settimanale la chiede con la seconda chip.
+    """
     riduzione = privacy.deriva_vincolo(testo_libero)
     persona = kb_persone.leggi(slug)
+    giorno_esteso = ""
+    ambito = ""
+    spiegazione = riduzione.spiegazione
+    if data:
+        try:
+            quel_giorno = dt.date.fromisoformat(data)
+        except ValueError:
+            data = ""
+        else:
+            giorno_esteso = GIORNI_ESTESI[quel_giorno.weekday()]
+            ambito = f"solo il {quel_giorno.day:02d}/{quel_giorno.month:02d}"
+            #: la spiegazione deve dire ciò che si vedrà davvero: `operativa()`
+            #: appende l'ambito, e prometterne uno diverso è la bugia più
+            #: facile da fare proprio nella card che serve a non farne
+            if riduzione.vincolo != "da_chiarire":
+                spiegazione = (
+                    f"Il manager e lo Scheduling vedranno «{riduzione.vincolo}» "
+                    f"limitato al {quel_giorno.day:02d}/{quel_giorno.month:02d}, non il motivo."
+                )
     return {
         "tipo": "scheda-preview",
         "persona": slug,
         "path": f"kb/persone/{slug}.md",
         "storia": riduzione.storia,
         "vincolo": riduzione.vincolo,
-        "spiegazione": riduzione.spiegazione,
+        "spiegazione": spiegazione,
+        "data": data,
+        "ambito": ambito,
+        #: l'etichetta della seconda chip: «tutti i giovedì»
+        "ricorrente": f"tutti i {giorno_esteso}" if giorno_esteso else "",
         "preferenze_attuali": [p.vincolo for p in persona.preferenze] if persona else [],
         "chip": ["salva-preferenza"],
     }

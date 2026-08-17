@@ -589,7 +589,12 @@ async def chip(request: Request, nome: str):
                     vincolo=str(dati.get("vincolo", "")),
                     storia="" if conferma == "solo-vincolo" else str(dati.get("storia", "")),
                     origine="confermata",
-                    data=_oggi().isoformat(),
+                    # `data` è l'**ambito**: la porta il tap su una cella, e la
+                    # chip «tutti i giovedì» la butta via per chiedere la
+                    # regola settimanale. Il testo libero non ne ha (U5).
+                    # Non è più la data della firma: metterci oggi qui vorrebbe
+                    # dire che ogni preferenza scritta vale solo per oggi.
+                    data="" if conferma == "ricorrente" else str(dati.get("data", "")),
                 ),
             )
             audit.decisione("-", "preferenza-salvata", a.slug)
@@ -671,7 +676,9 @@ def _preferenza_del_giorno(dati: dict, a: Attore) -> tuple[dict, str]:
     #: frase deterministica: `deriva_vincolo` è codice, non un modello, e da
     #: qui ricava `no_turno: gio`. La persona la vede prima di confermare.
     testo = f"{_giorno_esteso(data.isoformat())} non posso"
-    return vista.scheda_preview(a.slug, testo), ""
+    #: il tap parla di **quel** giorno: l'ambito è la data toccata, non tutti
+    #: i giovedì da qui all'eternità (Book 02 Loop P2)
+    return vista.scheda_preview(a.slug, testo, data=data.isoformat()), ""
 
 
 def _chiave_buco(buco: dict | None) -> tuple[str, str, str] | None:
