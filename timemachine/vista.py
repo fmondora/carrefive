@@ -193,8 +193,24 @@ def scheda_preview(slug: str, testo_libero: str) -> dict[str, Any]:
 # --- insieme -----------------------------------------------------------------
 
 
-def coverage_gap(gap: list[dict[str, Any]]) -> dict[str, Any]:
-    return {"tipo": "coverage-gap", "buchi": gap}
+def coverage_gap(
+    gap: list[dict[str, Any]], primario: tuple[str, str, str] | None = None
+) -> dict[str, Any]:
+    """I buchi. **Non** un veto: sono ore scoperte, non una violazione.
+
+    `primario` è la chiave `(data, fascia, reparto)` dell'unica riga che sta
+    aperta — il prossimo copribile, calcolato dal chiamante. Quindici chip
+    identiche sono un muro: si legge un numero e si tocca una riga, il resto
+    sta in disclosure (Book 02 Loop A3).
+    """
+    buchi = []
+    for g in gap:
+        b = dict(g)
+        b["primario"] = primario is not None and (
+            (str(g["data"]), str(g["fascia"]), str(g["reparto"])) == primario
+        )
+        buchi.append(b)
+    return {"tipo": "coverage-gap", "buchi": buchi}
 
 
 def candidati_gap(

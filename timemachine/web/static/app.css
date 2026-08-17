@@ -125,6 +125,25 @@ a { color: var(--foglia); }
 .esito { flex: 1 0 100%; margin-top: var(--s2); }
 .esito .card { margin: 0 0 var(--s2); }
 
+/* Disclosure nativa: i buchi che restano non sono un muro, ma nemmeno un
+   segreto. Zero JS — il `<details>` lo fa il browser. */
+.altri-buchi > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--inchiostro-muto);
+  font-size: var(--testo-body);
+}
+.altri-buchi[open] > summary { margin-bottom: var(--s1); }
+
+/* Il residuo nell'approval: si legge, non ferma. */
+.residuo {
+  margin: var(--s2) 0;
+  color: var(--inchiostro-muto);
+  font-size: var(--testo-body);
+}
+
 .prossimi li:last-child { border-bottom: none; }
 .prossimi .giorno { min-width: 3ch; color: var(--inchiostro-muto); }
 .prossimi .orario { min-width: 9ch; }

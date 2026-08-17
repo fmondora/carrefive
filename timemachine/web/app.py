@@ -473,6 +473,7 @@ async def chip(request: Request, nome: str):
                     azione="/chip/accetta-bozza",
                     toccati=_toccati(ciclo),
                     avvisi=_avvisi(ciclo),
+                    residuo=_residuo(ciclo),
                     blocco=bool(ciclo.bozza and not ciclo.bozza.pubblicabile),
                     conferma_testo="Accetta",
                 )
@@ -506,6 +507,7 @@ async def chip(request: Request, nome: str):
                     azione="/chip/pubblica",
                     toccati=_toccati(ciclo),
                     avvisi=_avvisi(ciclo),
+                    residuo=_residuo(ciclo),
                     conferma_testo="Pubblica",
                 )
                 return _verso_home()
@@ -555,7 +557,9 @@ async def chip(request: Request, nome: str):
                 fascia=bersaglio["fascia"],
             )
             flusso.pop("conferma", None)
-            _scarta_esiti(flusso)  # ricalcolati al prossimo tap
+            veniva_da = _chiave_buco(flusso.get("gap_scelto"))
+            _scarta_esiti(flusso)  # i candidati di prima sono già vecchi
+            _apri_prossimo_buco(flusso, ciclo, a, dopo=veniva_da)
             flusso["widget"] = _widget_bozza(ciclo, a)
             return _verso_home()
 
@@ -622,8 +626,10 @@ def _widget_bozza(ciclo: orchestratore.Ciclo, a: Attore) -> list[dict]:
     if ciclo.bozza is None:
         return []
     fuori = [vista.proposal_pack(ciclo.bozza, a, oggi=ciclo.settimana)]
-    if ciclo.bozza.gap:
-        fuori.append(vista.coverage_gap(ciclo.bozza.gap))
+    aperti = _buchi_aperti(ciclo)
+    if aperti:
+        prossimo = _prossimo_buco(ciclo, buchi=aperti)
+        fuori.append(vista.coverage_gap(aperti, _chiave_buco(prossimo)))
     if ciclo.bozza.violazioni or ciclo.bozza.segnalazioni:
         fuori.append(vista.compliance_block(ciclo.bozza.violazioni, ciclo.bozza.segnalazioni))
     fuori.append(vista.rationale(ciclo.bozza.rationale, ciclo.bozza.fonti))
@@ -636,6 +642,96 @@ GIORNI_ESTESI = ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "s
 def _giorno_esteso(iso: str) -> str:
     data = dt.date.fromisoformat(iso)
     return f"{GIORNI_ESTESI[data.weekday()]} {data.day:02d}/{data.month:02d}"
+
+
+def _chiave_buco(buco: dict | None) -> tuple[str, str, str] | None:
+    if not buco:
+        return None
+    return (str(buco["data"]), str(buco["fascia"]), str(buco["reparto"]))
+
+
+def _buchi_aperti(ciclo: orchestratore.Ciclo) -> list[dict]:
+    """I buchi **ancora** scoperti sul piano com'è adesso.
+
+    `bozza.gap` è la fotografia scattata da Scheduling: coprire un buco a mano
+    non la aggiorna, perché il solver non rigira i fabbisogni su una modifica
+    umana (e A non lo riscrive). Ricontare le teste in fascia costa niente ed
+    è l'unico modo perché «restano N buchi» sia vero anche al terzo gesto —
+    un conteggio fermo a quindici mentre il manager ne chiude tre è
+    esattamente lo zero che non è vero (`02` §4.4).
+
+    Non si scrive dentro la bozza: si legge il piano e si conta.
+    """
+    if ciclo.bozza is None or not ciclo.bozza.gap:
+        return []
+
+    from ..agents.scheduling import _teste_in_fascia
+
+    schede = kb_persone.per_slug()
+    aperti = []
+    for g in ciclo.bozza.gap:
+        try:
+            data = dt.date.fromisoformat(str(g["data"]))
+        except ValueError:
+            continue
+        richiesti = len(g.get("coperto_da") or []) + float(g.get("teste_mancanti") or 0)
+        try:
+            ora = len(
+                _teste_in_fascia(
+                    ciclo.bozza.piano, data, str(g["fascia"]), str(g["reparto"]), schede
+                )
+            )
+        except ValueError:  # fascia che non è del punto vendita
+            continue
+        mancanti = round(richiesti) - ora
+        if mancanti >= 1:
+            aperti.append({**g, "teste_mancanti": mancanti})
+    return aperti
+
+
+def _prossimo_buco(
+    ciclo: orchestratore.Ciclo,
+    dopo: tuple[str, str, str] | None = None,
+    buchi: list[dict] | None = None,
+) -> dict | None:
+    """Il prossimo buco **copribile**, in ordine di lista, dopo quello toccato.
+
+    Serve due volte: per la riga primaria della card (`dopo=None`) e per il
+    passo dopo uno spostamento confermato. Il buco appena coperto resta in
+    `bozza.gap` — Scheduling non rigira i fabbisogni su una modifica a mano —
+    quindi si riparte da *dopo* di lui invece di riproporlo (Book 09 slice 9).
+
+    Se nessuno di quelli che restano ha candidati, si ritorna comunque il
+    primo: una riga aperta con la sua card onesta dice più di zero righe.
+    """
+    from ..agents.forecast import FASCE
+    from ..agents.scheduling import candidati_per_gap
+
+    buchi = _buchi_aperti(ciclo) if buchi is None else buchi
+    if not buchi:
+        return None
+    inizio = 0
+    if dopo is not None:
+        for i, g in enumerate(buchi):
+            if _chiave_buco(g) == dopo:
+                inizio = i + 1
+                break
+    coda = buchi[inizio:]
+    if not coda:
+        return None
+
+    fasce = {n for n, _, _ in FASCE}
+    schede = kb_persone.per_slug()  # una lettura sola per tutta la scansione
+    for g in coda:
+        if str(g["fascia"]) not in fasce:
+            continue
+        try:
+            data = dt.date.fromisoformat(str(g["data"]))
+        except ValueError:
+            continue
+        if candidati_per_gap(ciclo.bozza.piano, data, str(g["fascia"]), str(g["reparto"]), schede):
+            return g
+    return coda[0]
 
 
 def _candidati_del_gap(
@@ -716,6 +812,35 @@ def _cella_attuale(ciclo: orchestratore.Ciclo, bersaglio: dict) -> str:
     return (turno.etichetta().replace("–", "-") if turno else "") or "—"
 
 
+def _apri_prossimo_buco(
+    flusso: dict[str, Any],
+    ciclo: orchestratore.Ciclo,
+    a: Attore,
+    dopo: tuple[str, str, str] | None = None,
+) -> None:
+    """Dopo uno spostamento confermato: il prossimo buco, non il muro.
+
+    Chiudere la settimana è **una** coda di gesti, non quindici tap uguali
+    ripartiti da capo ogni volta. Si passa dallo stesso `consulta` — nessun
+    path nuovo, nessuna copertura automatica: il buco si apre, la persona
+    decide (Book 02 Loop A3).
+    """
+    if ciclo.stato != "attesa_umano" or ciclo.bozza is None:
+        return
+    buco = _prossimo_buco(ciclo, dopo=dopo)
+    if buco is None:
+        return
+    candidati, problema = _candidati_del_gap(buco, ciclo, a)
+    if problema:
+        return
+    flusso["candidati_gap"] = candidati
+    flusso["gap_scelto"] = {
+        "data": str(buco["data"]),
+        "fascia": str(buco["fascia"]),
+        "reparto": str(buco["reparto"]),
+    }
+
+
 def _scarta_esiti(flusso: dict[str, Any]) -> None:
     """L'esito di un tap vale per **quella** bozza.
 
@@ -792,6 +917,25 @@ def _avvisi(ciclo: orchestratore.Ciclo) -> list[str]:
     return [f"{v['persona']}: {v['dettaglio']}" for v in ciclo.bozza.segnalazioni[:8]]
 
 
+def _residuo(ciclo: orchestratore.Ciclo) -> str:
+    """«Restano N buchi» prima del sì — **detto**, non vietato.
+
+    Un buco è un'ora scoperta, non una violazione: non tocca il dual gate
+    (`pubblicabile ∧ accettata`, `ciclo.py`). Ma pubblicare senza sapere
+    quanti ne restano è pubblicare alla cieca, e il manager se ne accorge
+    lunedì mattina (Book 08, «15 buchi vs close»).
+    """
+    if ciclo.bozza is None:
+        return ""
+    n = len(_buchi_aperti(ciclo))
+    if not n:
+        return "Nessun buco di copertura sulla settimana."
+    return (
+        f"Restano {n} buch{'i' if n > 1 else 'o'} di copertura: non bloccano "
+        "la pubblicazione, ma la settimana esce così."
+    )
+
+
 def _apri_conferma(
     flusso: dict[str, Any],
     domanda: str,
@@ -801,6 +945,7 @@ def _apri_conferma(
     campi: dict[str, str] | None = None,
     conferma_testo: str = "",
     blocco: bool = False,
+    residuo: str = "",
 ) -> None:
     """Mette una conferma **in attesa sulla home**, non su un'altra pagina.
 
@@ -816,6 +961,7 @@ def _apri_conferma(
         "campi": campi or {},
         "conferma_testo": conferma_testo,
         "blocco": blocco,
+        "residuo": residuo,
     }
 
 

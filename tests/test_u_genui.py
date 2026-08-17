@@ -392,6 +392,19 @@ def test_u_sposta_ok(client, sessione_di, manager):
     ) or ciclo.bozza.violazioni
 
 
+def _candidati_di(client):
+    """Il flusso **di questa sessione**.
+
+    `_FLUSSO` è globale al processo e i test ci lasciano dentro le loro
+    sessioni: sommarle tutte fa contare i candidati di qualcun altro.
+    """
+    from timemachine.auth import sessioni
+    from timemachine.web.app import _FLUSSO
+
+    sid = client.cookies.get(sessioni.NOME_COOKIE)
+    return _FLUSSO.get(sid, {}).get("candidati_gap", [])
+
+
 def _primo_gap_con_candidati(ciclo):
     from timemachine.agents.scheduling import candidati_per_gap
     from timemachine.kb import persone as kbp
@@ -444,10 +457,8 @@ def test_u_gap_candidati(client, sessione_di, manager, llm_finto):
 
     # nessun candidato in riposo o ferie, e tetto rispettato
     from timemachine.agents.scheduling import MAX_CANDIDATI
-    from timemachine.web.app import _FLUSSO
 
-    candidati = [c for f in _FLUSSO.values() for c in f.get("candidati_gap", [])]
-    persone = [c for c in candidati if c["tipo"] == "person-shifts"]
+    persone = [c for c in _candidati_di(client) if c["tipo"] == "person-shifts"]
     assert 0 < len(persone) <= MAX_CANDIDATI
     data = dt.date.fromisoformat(gap["data"])
     for card in persone:
@@ -470,10 +481,7 @@ def test_u_gap_vuoto(client, sessione_di, manager):
         },
         follow_redirects=True,
     )
-    from timemachine.web.app import _FLUSSO
-
-    candidati = [c for f in _FLUSSO.values() for c in f.get("candidati_gap", [])]
-    persone = [c for c in candidati if c["tipo"] == "person-shifts"]
+    persone = [c for c in _candidati_di(client) if c["tipo"] == "person-shifts"]
     if not persone:
         assert "Nessuno con la mansione" in r.text
         assert "riposi e le ferie non entrano" in r.text
@@ -724,6 +732,193 @@ def test_scegli_variante_assente_con_una_variante(client, sessione_di, manager):
 
     ciclo.bozza.varianti = ciclo.bozza.varianti * 2  # due varianti: il bivio esiste
     assert "scegli-variante" in ciclo.chip()
+
+
+# --- canary slice A3 (specs `02` Loop A3) ------------------------------------
+
+
+def _card_buchi(html):
+    """La card dei buchi per intero.
+
+    Non si taglia al primo `</section>`: dentro ci sono le card dei candidati,
+    e la disclosure viene dopo. Si taglia al widget successivo.
+    """
+    return html.split('data-tipo="coverage-gap"')[1].split('data-tipo="proposal-pack"')[0]
+
+
+def _gap_scelto_di(client):
+    from timemachine.auth import sessioni
+    from timemachine.web.app import _FLUSSO
+
+    sid = client.cookies.get(sessioni.NOME_COOKIE)
+    return _FLUSSO.get(sid, {}).get("gap_scelto")
+
+
+def _sciogli_matteo(client, ciclo):
+    """Toglie il blocco del tetto con la mossa più leggera (gesto di A2)."""
+    from timemachine.agents.compliance import celle_che_sciolgono
+    from timemachine.kb import persone as kbp
+
+    blocco = next(v for v in ciclo.bozza.violazioni if v["regola"] == "ore-massime")
+    mossa = celle_che_sciolgono(ciclo.bozza.piano, blocco, kbp.per_slug())[0]
+    client.post(
+        "/chip/sposta-turno",
+        data={
+            "persona": mossa["persona"],
+            "data": mossa["data"],
+            "fascia": mossa["fascia"],
+            "conferma": "1",
+        },
+    )
+
+
+def test_u_residuo_pubblica(client, sessione_di, manager):
+    """U-residuo-pubblica: i buchi si dicono, non vietano.
+
+    Un buco è un'ora scoperta, non una violazione: il dual gate resta CCNL +
+    accettata. Ma `Pubblica` senza sapere quanti ne restano è pubblicare alla
+    cieca, e il conto arriva lunedì mattina (Book 08, «15 buchi vs close»).
+    """
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
+    quanti = len(ciclo.bozza.gap)
+    assert quanti > 0, "la bozza demo deve avere dei buchi residui"
+
+    _sciogli_matteo(client, ciclo)
+    client.post("/chip/accetta-bozza", data={"conferma": "1"})
+
+    # il gate è passato: i buchi non l'hanno toccato
+    assert ciclo.bozza.pubblicabile and ciclo.bozza.accettata
+    assert "pubblica" in ciclo.chip()
+    assert len(ciclo.bozza.gap) == quanti  # sono ancora tutti lì
+
+    html = client.post("/chip/pubblica", data={}, follow_redirects=True).text
+    approval = html.split('data-chrome="approval"')[1].split("</section>")[0]
+    assert "Pubblico la settimana?" in approval
+    assert f"Restano {quanti} buchi" in approval
+    assert "non bloccano" in approval
+    # detto, non vietato: il bottone c'è
+    assert 'value="1"' in approval and "Pubblica" in approval
+
+
+def test_u_prossimo_buco(client, sessione_di, manager):
+    """U-prossimo-buco: dopo uno spostamento il prossimo, non il muro.
+
+    Chiudere la settimana è una coda di gesti. Riportare il manager davanti a
+    quindici chip identiche dopo ogni conferma gli fa ricominciare la ricerca
+    da capo — quindici volte (map A3, P1.2).
+    """
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
+    gap = _primo_gap_con_candidati(ciclo)
+    assert gap is not None
+
+    client.post(
+        "/chip/consulta",
+        data={"data": gap["data"], "fascia": gap["fascia"], "reparto": gap["reparto"]},
+    )
+    candidato = next(c for c in _candidati_di(client) if c["tipo"] == "person-shifts")
+    sposta = candidato["sposta"]
+
+    html = client.post(
+        "/chip/sposta-turno",
+        data={
+            "persona": sposta["persona"],
+            "data": sposta["data"],
+            "fascia": sposta["fascia"],
+            "conferma": "1",
+        },
+        follow_redirects=True,
+    ).text
+
+    # non si è tornati al muro: c'è un esito aperto, ed è su un **altro** buco
+    dopo = _gap_scelto_di(client)
+    assert dopo is not None, "dopo la conferma il prossimo buco deve essere aperto"
+    assert (dopo["data"], dopo["fascia"], dopo["reparto"]) != (
+        gap["data"], gap["fascia"], gap["reparto"]
+    )
+    card = _card_buchi(html)
+    assert '<div class="esito">' in card
+    assert 'class="scelto"' in card
+
+    # e il resto dei buchi è in disclosure, non quindici form in fila
+    fuori = card.split("<details")[0]
+    assert fuori.count('action="/chip/consulta"') <= 2
+    assert "<details" in card
+
+
+def test_la_card_dei_buchi_e_un_conteggio_non_un_muro(client, sessione_di, manager):
+    """La card dice N e ne apre una: il resto sta sotto disclosure, zero JS."""
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
+    n = len(ciclo.bozza.gap)
+    assert n > 2
+
+    html = client.get("/home").text
+    card = _card_buchi(html)
+    assert f"{n} buchi di copertura" in card
+    assert "non bloccano la pubblicazione" in card
+    assert card.split("<details")[0].count('action="/chip/consulta"') == 1
+    assert f"Gli altri {n - 1}" in card
+    assert "<script" not in html  # la disclosure è del browser
+
+    # la riga aperta è un buco copribile, non la prima della lista a caso
+    from timemachine.web.app import _prossimo_buco
+
+    primario = next(b for b in card.split("<details")[0].split("<li")[1:] if "value=" in b)
+    assert _prossimo_buco(ciclo)["data"] in primario
+
+
+def test_il_residuo_e_vivo_non_la_fotografia(client, sessione_di, manager):
+    """«Restano N» conta il piano di adesso, non la proposta di prima.
+
+    `bozza.gap` è la fotografia di Scheduling: coprire un buco a mano non la
+    aggiorna. Un numero fermo a quindici mentre il manager ne chiude tre è lo
+    zero che non è vero — quello che `02` §4.4 vieta sui saldi, e che qui
+    varrebbe per la sola cosa che l'approval gli chiede di guardare.
+    """
+    import datetime as dt
+
+    from timemachine.agents.forecast import FASCE
+    from timemachine.agents.scheduling import candidati_per_gap
+    from timemachine.kb import persone as kbp
+    from timemachine.web.app import _buchi_aperti, _residuo
+
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    ciclo = orchestratore.ciclo(SETTIMANA_PROSSIMA)
+    schede = kbp.per_slug()
+    fotografia = len(ciclo.bozza.gap)
+    assert len(_buchi_aperti(ciclo)) == fotografia  # prima di toccare: identici
+
+    chiuso = False
+    for g in list(ciclo.bozza.gap):
+        data = dt.date.fromisoformat(g["data"])
+        cand = candidati_per_gap(ciclo.bozza.piano, data, g["fascia"], g["reparto"], schede)
+        if not cand:
+            continue
+        prima = len(_buchi_aperti(ciclo))
+        dalle, alle = next((d, al) for n, d, al in FASCE if n == g["fascia"])
+        client.post(
+            "/chip/sposta-turno",
+            data={
+                "persona": cand[0],
+                "data": g["data"],
+                "fascia": f"{dalle.hour}-{alle.hour}",
+                "conferma": "1",
+            },
+        )
+        if len(_buchi_aperti(ciclo)) < prima:
+            chiuso = True
+            break
+
+    assert chiuso, "coprire un buco deve poter far calare il conteggio"
+    assert len(ciclo.bozza.gap) == fotografia  # la fotografia non si tocca
+    assert len(_buchi_aperti(ciclo)) < fotografia
+    assert f"Restano {len(_buchi_aperti(ciclo))} buchi" in _residuo(ciclo)
 
 
 def test_i_due_tetti_restano_due_costanti():

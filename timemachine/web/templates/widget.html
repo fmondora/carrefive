@@ -50,7 +50,9 @@
             <input type="hidden" name="persona" value="{{ m.persona }}">
             <input type="hidden" name="data" value="{{ m.data }}">
             <input type="hidden" name="fascia" value="{{ m.fascia }}">
-            <button class="chip">{{ m.prima }} → {{ m.fascia }}</button>
+            {# il giorno anche sulla chip: due «6-14 → R» a schermo sono la
+               stessa etichetta per due atti diversi (Book 09 slice 10) #}
+            <button class="chip">{{ m.giorno }} {{ m.prima }} → {{ m.fascia }}</button>
             <span class="mansione">{{ "%g"|format(m.ore_dopo) }}h</span>
           </form>
         {% endfor %}
@@ -135,33 +137,56 @@
 {% endmacro %}
 
 {# --- coverage-gap / compliance-block ------------------------------------ #}
+{% macro riga_gap(g, tappato, candidati) %}
+  {# ogni riga è un atto, non una constatazione: porta ai candidati (Book 03) #}
+  <li class="{% if tappato %}scelto{% endif %}">
+    <form method="post" action="/chip/consulta" class="riga-atto">
+      <input type="hidden" name="data" value="{{ g.data }}">
+      <input type="hidden" name="fascia" value="{{ g.fascia }}">
+      <input type="hidden" name="reparto" value="{{ g.reparto }}">
+      <span class="giorno">{{ g.data[8:10] }}/{{ g.data[5:7] }}</span>
+      <span class="orario">{{ g.fascia }}</span>
+      <span class="mansione">{{ g.reparto }} · mancano {{ "%g"|format(g.teste_mancanti) }}</span>
+      <button class="chip">Chi può coprirlo</button>
+    </form>
+    {# il soggetto è **questo** buco: l'esito sta qui sotto, non in fondo
+       agli altri quattordici (Book 02 Loop A2) #}
+    {% if tappato and candidati %}
+      <div class="esito">{% for c in candidati %}{{ render(c) }}{% endfor %}</div>
+    {% endif %}
+  </li>
+{% endmacro %}
+
 {% macro coverage_gap(w, candidati=None, scelto=None) %}
+{# Un buco non è una violazione: non veta `pubblica` (Book 02 Loop A3). Ma
+   quindici chip identiche sono un muro — si legge il numero, si tocca una
+   riga, il resto sta in disclosure finché non serve. #}
 <section class="card card--gap" data-tipo="coverage-gap">
-  <h2>Buchi di copertura</h2>
+  <h2>{{ w.buchi|length }} buch{{ "i" if w.buchi|length != 1 else "o" }} di copertura</h2>
+  <p class="meta">Ore scoperte, non una violazione: non bloccano la pubblicazione.</p>
+  {% set ns = namespace(aperti=0) %}
   <ul class="prossimi">
-    {# ogni riga è un atto, non una constatazione: porta ai candidati (Book 03) #}
     {% for g in w.buchi %}
       {% set tappato = scelto and scelto.data == g.data and scelto.fascia == g.fascia and scelto.reparto == g.reparto %}
-      <li class="{% if tappato %}scelto{% endif %}">
-        <form method="post" action="/chip/consulta" class="riga-atto">
-          <input type="hidden" name="data" value="{{ g.data }}">
-          <input type="hidden" name="fascia" value="{{ g.fascia }}">
-          <input type="hidden" name="reparto" value="{{ g.reparto }}">
-          <span class="giorno">{{ g.data[8:10] }}/{{ g.data[5:7] }}</span>
-          <span class="orario">{{ g.fascia }}</span>
-          <span class="mansione">{{ g.reparto }} · mancano {{ "%g"|format(g.teste_mancanti) }}</span>
-          <button class="chip">Chi può coprirlo</button>
-        </form>
-        {# il soggetto è **questo** buco: l'esito sta qui sotto, non in fondo
-           agli altri quattordici (Book 02 Loop A2) #}
-        {% if tappato and candidati %}
-          <div class="esito">{% for c in candidati %}{{ render(c) }}{% endfor %}</div>
-        {% endif %}
-      </li>
+      {% if g.primario or tappato %}
+        {% set ns.aperti = ns.aperti + 1 %}
+        {{ riga_gap(g, tappato, candidati) }}
+      {% endif %}
     {% else %}
       <li class="mansione">Nessun buco.</li>
     {% endfor %}
   </ul>
+  {% if w.buchi|length > ns.aperti %}
+    <details class="altri-buchi">
+      <summary>Gli altri {{ w.buchi|length - ns.aperti }}</summary>
+      <ul class="prossimi">
+        {% for g in w.buchi %}
+          {% set tappato = scelto and scelto.data == g.data and scelto.fascia == g.fascia and scelto.reparto == g.reparto %}
+          {% if not (g.primario or tappato) %}{{ riga_gap(g, false, none) }}{% endif %}
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
 </section>
 {% endmacro %}
 
@@ -336,6 +361,9 @@
   {% if c.blocco %}
     <p class="errore">Compliance blocca: finché resta così non potrai pubblicare.</p>
   {% endif %}
+  {# Il residuo si dice **prima** del sì. Non è un veto: pubblicare senza
+     sapere quanti buchi restano è pubblicare alla cieca (Book 08). #}
+  {% if c.residuo %}<p class="residuo">{{ c.residuo }}</p>{% endif %}
   {% if c.toccati %}
     <div class="etichetta">Chi è toccato</div>
     <ul class="prossimi toccati">
