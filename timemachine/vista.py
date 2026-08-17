@@ -385,6 +385,7 @@ def copilot_turn(
     chip: list[str] | None = None,
     widget: list[dict] | None = None,
     motivo: str = "",
+    generata: bool | None = None,
 ) -> dict[str, Any]:
     """`motivo` dice *perché* manca la prosa (P-D):
 
@@ -392,6 +393,10 @@ def copilot_turn(
     - `"non-configurato"` → nessun backend: risposta di solo calcolo;
     - `"schema"` → ha risposto fuori schema: prosa scartata, fatti tenuti;
     - `"giu"` → c'era un backend e non risponde. Questo è un guasto.
+
+    `generata` di norma segue il motivo, ma si può dire di no: una frase
+    scritta nel codice (il saluto del gateway) non è una proposta del modello,
+    e marcarla come tale svuota il segno per quelle che lo sono (P-I).
     """
     chip_ok, _ = catalogo.filtra_chip(chip or [])
     widget_ok, scartati = catalogo.filtra_widget(widget or [])
@@ -401,7 +406,7 @@ def copilot_turn(
         "chip": chip_ok,
         "widget": widget_ok,
         "scartati": scartati,
-        "generata": not motivo,
+        "generata": (not motivo) if generata is None else generata,
         "degradato": bool(motivo),
         "motivo": motivo,
     }

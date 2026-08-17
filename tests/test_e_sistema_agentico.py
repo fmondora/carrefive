@@ -229,6 +229,58 @@ def test_e8_ter_output_llm_fuori_schema_si_scarta_dopo_i_retry():
         )
 
 
+# --- E10 ---------------------------------------------------------------------
+
+
+def test_e10_ciao_non_e_consult_scheduling(anna, manager, contesto, monkeypatch):
+    """E10: il gateway classifica prima di invocare (`01` Loop P1).
+
+    Il `default → consult(scheduling)` faceva parlare il Copilot *come* il
+    pianificatore: a un dipendente tornava una risposta vuota (l'authz toglie
+    i turni altrui) e a chiunque tornava una consulenza mai chiesta. P-L
+    storto: un agente che risponde a una domanda che non è sua.
+    """
+    from timemachine.agents import base
+    from timemachine.agents import copilot as agente_copilot
+
+    visti: list[str] = []
+    vero = base.consult
+
+    def spia(id_agente, domanda, contesto, **extra):
+        visti.append(id_agente)
+        return vero(id_agente, domanda, contesto, **extra)
+
+    monkeypatch.setattr(base, "consult", spia)
+    monkeypatch.setattr("timemachine.agents.copilot.consult", spia)
+
+    for chi in (anna, manager):
+        for frase in ("ciao!", "buongiorno", "il pesce è fresco?"):
+            risposta = agente_copilot.AGENTE.rispondi(frase, chi, contesto)
+            assert visti == [], f"{frase} ha invocato {visti}"
+            assert risposta.proposta is None
+            assert risposta.turno["chip"], "un vicolo cieco non è una risposta"
+            assert risposta.spento is False
+
+    # un dipendente non apre il roster nemmeno con una domanda di dominio
+    risposta = agente_copilot.AGENTE.rispondi("chi copre giovedì?", anna, contesto)
+    assert visti == []
+    assert "non vedo il piano degli altri" in risposta.turno["testo"]
+
+    # il manager sì: stessa frase, stesso gateway, agente giusto
+    agente_copilot.AGENTE.rispondi("chi copre giovedì?", manager, contesto)
+    assert visti == ["scheduling"]
+
+
+def test_e10_bis_lallowlist_del_dipendente_e_piu_corta(anna, manager):
+    from timemachine.agents.copilot import TOOL_DIPENDENTE, Copilot
+
+    copilot = Copilot()
+    assert set(copilot.tool_per(anna)) == set(TOOL_DIPENDENTE)
+    assert set(copilot.tool_per(manager)) == set(copilot.tool())
+    assert "consulta_scheduling" not in copilot.tool_per(anna)
+    assert "genera-bozza" not in str(copilot.tool_per(anna))
+
+
 # --- confine di fiducia ------------------------------------------------------
 
 

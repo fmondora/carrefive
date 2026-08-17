@@ -39,10 +39,28 @@
   <ul class="prossimi">
     {% for t in w.prossimi %}
       <li class="{% if t.overlay == 'bozza' %}overlay-bozza{% endif %}">
+        {% if mio and t.orario %}
+          {# Il gesto muto: **il giorno** è il bersaglio, non una chip in più
+             accanto (Book 02 Loop P1). Dice la stessa cosa che si direbbe
+             scrivendo «quel giorno non posso», e non riscrive il turno:
+             prepara una preferenza da confermare.
+             Solo sui giorni lavorati: rifiutare un riposo non vuol dire niente. #}
+          <form method="post" action="/chip/consulta">
+            <input type="hidden" name="motivo" value="preferenza">
+            <input type="hidden" name="data" value="{{ t.data }}">
+            <button class="riga-tap" title="dì che quel giorno non puoi">
+              <span class="giorno">{{ t.giorno }}</span>
+              <span class="orario">{{ t.orario }}</span>
+              {% if t.mansioni %}<span class="mansione"><i class="punto-reparto"></i>{{ t.mansioni|join(", ") }}</span>{% endif %}
+              {% if t.note %}<span class="mansione">{{ t.note }}</span>{% endif %}
+            </button>
+          </form>
+        {% else %}
         <span class="giorno">{{ t.giorno }}</span>
         <span class="orario">{{ t.orario or t.badge }}</span>
         {% if t.mansioni %}<span class="mansione"><i class="punto-reparto"></i>{{ t.mansioni|join(", ") }}</span>{% endif %}
         {% if t.note %}<span class="mansione">{{ t.note }}</span>{% endif %}
+        {% endif %}
         {# il gesto sta sulla **cella**: qui la mossa toglie il blocco, e dice
            già cosa si perde e dove arrivano le ore (Book 02 A2) #}
         {% for m in t.mosse or [] %}
@@ -63,6 +81,9 @@
   </ul>
 
   <p class="ore-periodo">{{ "%g"|format(w.ore_periodo) }}h{% if w.contratto_ore %} su {{ "%g"|format(w.contratto_ore) }}{% endif %}</p>
+  {% if mio and w.prossimi|selectattr("orario")|list %}
+    <p class="meta">Tocca un giorno per dire che non puoi: preparo la preferenza, la confermi tu.</p>
+  {% endif %}
 
   {# candidato per un buco: il bersaglio è già qui, la chip non è mai nuda.
      Il soggetto è il **buco**, quindi giorno e fascia stanno scritti. #}

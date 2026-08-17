@@ -104,6 +104,27 @@ a { color: var(--foglia); }
   font-variant-numeric: tabular-nums;
 }
 
+/* Il giorno dei propri turni è il bersaglio del gesto: la riga *è* il bottone,
+   non ne ospita uno in più. Sei chip «quel giorno no» sono lo stesso muro che
+   si è tolto ai buchi del manager (Book 02 Loop P1). */
+.riga-tap {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.riga-tap:hover .orario { text-decoration: underline dotted; }
+
 /* Una riga che è un atto: buco, violazione, mossa sulla cella. */
 .riga-atto {
   display: flex;

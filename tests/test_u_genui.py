@@ -288,7 +288,10 @@ def test_u_composer_det(client, sessione_di, llm_finto):
 def test_u_composer_det_unita(anna, contesto, llm_finto):
     from timemachine.agents import copilot as agente_copilot
 
-    llm_finto.risposte = ["non è json", "nemmeno questo"]
+    # due chiamate al modello: prima l'intent, poi la prosa. Entrambe fuori
+    # schema (`retry=1` → due tentativi a testa): il gateway cade
+    # sull'euristica, la prosa si butta, i fatti restano.
+    llm_finto.risposte = ["non è json", "nemmeno questo", "né questo", "e nemmeno"]
     risposta = agente_copilot.AGENTE.rispondi("giovedì ho pianoforte", anna, contesto)
     assert risposta.motivo == "schema"
     assert risposta.spento is False
@@ -732,6 +735,140 @@ def test_scegli_variante_assente_con_una_variante(client, sessione_di, manager):
 
     ciclo.bozza.varianti = ciclo.bozza.varianti * 2  # due varianti: il bivio esiste
     assert "scegli-variante" in ciclo.chip()
+
+
+# --- canary slice P1 (specs `01`/`02` Loop P1) -------------------------------
+
+
+def _spia_consult(monkeypatch):
+    """Registra ogni `consult(agente, …)` senza cambiarne il comportamento."""
+    from timemachine.agents import base
+
+    visti: list[str] = []
+    vero = base.consult
+
+    def spia(id_agente, domanda, contesto, **extra):
+        visti.append(id_agente)
+        return vero(id_agente, domanda, contesto, **extra)
+
+    monkeypatch.setattr(base, "consult", spia)
+    monkeypatch.setattr("timemachine.agents.copilot.consult", spia)
+    return visti
+
+
+def test_u_p_ciao(client, sessione_di, monkeypatch):
+    """U-p-ciao: «ciao!» non è una consulenza di pianificazione.
+
+    Il vecchio `else` mandava a Scheduling tutto ciò che non era una regex:
+    ad Anna tornava la risposta del pianificatore svuotata dall'authz — cioè
+    niente, con l'aria di un guasto (map P1 §P0.2).
+    """
+    visti = _spia_consult(monkeypatch)
+    sessione_di("anna-mondora")
+
+    html = client.post("/copilota", data={"testo": "ciao!"}, follow_redirects=True).text
+
+    assert "scheduling" not in visti
+    assert visti == []  # nessun agente invocato per un saluto
+    # zero turni di colleghi: c'è solo la sua card, quella fissa del guscio
+    assert html.count('data-tipo="person-shifts"') == 1
+    assert "Anna Mondora" in html
+    for collega in ("Matteo", "Debora", "Cesare", "Mara"):
+        assert collega not in html
+    # composer acceso e almeno una chip che porta da qualche parte
+    assert "disabled" not in html.split('class="composer"')[1]
+    assert 'action="/chip/apri-scheda"' in html
+    # e non si spaccia per prosa del modello
+    turno = html.split('data-tipo="copilot-turn"')[1].split("</section>")[0]
+    assert "generata" not in html.split('data-tipo="copilot-turn"')[0][-80:]
+    assert "tocca un giorno" in turno
+
+
+def test_u_p_ciao_non_e_un_intent_a_caso(anna, contesto, llm_finto):
+    """L'enum è chiuso: quello che il modello dice fuori enum non passa."""
+    from timemachine.agents import copilot as agente_copilot
+
+    llm_finto.per_agente = {"classificatore": {"intent": "saluto"}}
+    assert agente_copilot.AGENTE._intent("ciao!") == ("saluto", "")
+
+    # fuori enum: lo schema lo rifiuta al confine, come ogni output di modello
+    # (P-A). Non si «aggiusta» un intent inventato: si ricade sull'euristica.
+    llm_finto.per_agente = {"classificatore": {"intent": "cancella_tutto"}}
+    assert agente_copilot.AGENTE._intent("ciao!") == ("saluto", "schema")
+
+    for frase, atteso in (
+        ("ciao!", "saluto"),
+        ("quante ferie ho?", "saldi"),
+        ("quali turni ho questa settimana?", "turni_miei"),
+        ("chi copre giovedì pomeriggio?", "copri"),
+        ("giovedì ho lezione di pianoforte", "preferenza"),
+        ("generami la bozza della settimana", "comando_ciclo"),
+        ("il pesce è fresco?", "sconosciuto"),
+    ):
+        assert agente_copilot.AGENTE._intent_det(frase) == atteso, frase
+
+
+def test_u_p_cella(client, sessione_di):
+    """U-p-cella: toccare un giorno prepara la preferenza, non riscrive il turno.
+
+    Stesso intent del composer, senza passare dal linguaggio: la scheda cambia
+    solo quando lei conferma (UC-07).
+    """
+    sessione_di("anna-mondora")
+    prima = kb_persone.percorso("anna-mondora").read_text(encoding="utf-8")
+
+    # U1: al primo paint nessuna preview, solo le due card
+    html = client.get("/home").text
+    assert 'data-tipo="scheda-preview"' not in html
+    # ma i giorni sono un gesto
+    assert 'name="motivo" value="preferenza"' in html
+
+    giorno = re.search(
+        r'name="motivo" value="preferenza">\s*<input type="hidden" name="data" value="([\d-]+)"',
+        html,
+    ).group(1)
+
+    html = client.post(
+        "/chip/consulta",
+        data={"motivo": "preferenza", "data": giorno},
+        follow_redirects=True,
+    ).text
+    assert 'data-tipo="scheda-preview"' in html
+    assert "no_turno:" in html  # vincolo derivato da codice, non da un modello
+    assert kb_persone.percorso("anna-mondora").read_text(encoding="utf-8") == prima
+
+    # conferma: solo ora si scrive
+    client.post(
+        "/chip/salva-preferenza",
+        data={"persona": "anna-mondora", "vincolo": "no_turno: gio", "conferma": "1"},
+    )
+    assert any(
+        p.vincolo == "no_turno: gio" for p in kb_persone.leggi("anna-mondora").preferenze
+    )
+
+
+def test_la_cella_di_un_collega_non_e_un_gesto(client, sessione_di, manager):
+    """Il bersaglio è sempre chi tocca: nessuno dichiara un vincolo per altri."""
+    sessione_di("francesco")
+    client.post("/chip/genera-bozza")
+    html = client.get("/home").text
+
+    # la card di un collega non ha il gesto; la sua sì
+    slug = next(s for s in re.findall(r'data-persona="([\w-]+)"', html) if s != "francesco")
+    altrui = html.split(f'data-persona="{slug}"')[1].split("</section>")[0]
+    assert 'name="motivo" value="preferenza"' not in altrui
+    mia = html.split('data-persona="francesco"')[1].split("</section>")[0]
+    assert 'name="motivo" value="preferenza"' in mia
+
+    # e anche forzando il POST, la preview è sua
+    html = client.post(
+        "/chip/consulta",
+        data={"motivo": "preferenza", "data": SETTIMANA_PROSSIMA.isoformat(), "persona": "matteo"},
+        follow_redirects=True,
+    ).text
+    preview = html.split('data-tipo="scheda-preview"')[1].split("</section>")[0]
+    assert "kb/persone/francesco.md" in preview
+    assert "matteo" not in preview
 
 
 # --- canary slice A3 (specs `02` Loop A3) ------------------------------------

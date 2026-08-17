@@ -412,6 +412,18 @@ async def chip(request: Request, nome: str):
             # Con un payload è un atto deterministico, senza prompt di mezzo:
             # «chi può coprirlo» su un buco, «come lo sciolgo» su un blocco.
             # Senza payload resta il no-op di sempre.
+            # Il gesto muto: toccare un proprio giorno è lo stesso intent
+            # `preferenza` del composer, senza passare dal linguaggio. Il
+            # bersaglio è **sempre** chi ha toccato: non si dichiara un
+            # vincolo per qualcun altro (`02` Loop P1).
+            if str(dati.get("motivo") or "") == "preferenza" and dati.get("data"):
+                preview, problema = _preferenza_del_giorno(dati, a)
+                if problema:
+                    flusso["widget"] = [vista.copilot_turn(problema, [])]
+                    return _render_home(request, status_code=400)
+                flusso["widget"] = [preview]
+                return _verso_home()
+
             if dati.get("persona") and str(dati.get("motivo") or "") == "blocco":
                 esigi_manager(a, "chip/consulta")
                 carte, violazione, mosse, problema = _celle_del_blocco(dati, ciclo, a)
@@ -642,6 +654,24 @@ GIORNI_ESTESI = ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "s
 def _giorno_esteso(iso: str) -> str:
     data = dt.date.fromisoformat(iso)
     return f"{GIORNI_ESTESI[data.weekday()]} {data.day:02d}/{data.month:02d}"
+
+
+def _preferenza_del_giorno(dati: dict, a: Attore) -> tuple[dict, str]:
+    """Tap su un giorno dei **miei** turni → `scheda-preview` da confermare.
+
+    Non scrive niente: prepara la stessa preview che oggi nasce da «giovedì
+    pomeriggio ho pianoforte», e la conferma resta `salva-preferenza` (U5).
+    Il pubblicato non si riscrive: quello che cambia è la scheda, cioè quello
+    che lo Scheduling leggerà la prossima volta (UC-07).
+    """
+    try:
+        data = dt.date.fromisoformat(str(dati.get("data")))
+    except ValueError:
+        return {}, "Quel giorno non l'ho capito."
+    #: frase deterministica: `deriva_vincolo` è codice, non un modello, e da
+    #: qui ricava `no_turno: gio`. La persona la vede prima di confermare.
+    testo = f"{_giorno_esteso(data.isoformat())} non posso"
+    return vista.scheda_preview(a.slug, testo), ""
 
 
 def _chiave_buco(buco: dict | None) -> tuple[str, str, str] | None:
