@@ -10,5 +10,6 @@ Ogni giro surface-map → Book → codice ha un **id**. Si cita uguale in spec, 
 | **P1** | 2026-08-17 | Copilot = gateway; cella = preferenza | map P1 · Book P1 · impl `251ab6a` |
 | **P2** | 2026-08-17 | Tap = quella data | map P2 · Book P2 · impl `9ccb62a` |
 | **P3** | 2026-08-17 | *In review.* `viola` = sovrapposizione fascia, non ora d’inizio | map `2026-08-17-P3-surface-map.md` |
+| **C1** | 2026-08-18 | Copilota = storia + compose (non router). Frame Azienda dopo: M1/R1/Q1 | map `2026-08-18-C1-surface-map.md` · Book C1 approvato |
 
 Regola: si emenda la spec con una sezione `## Loop <id>` in coda. Non si riscrive il corpo storico. Il Book nuova edition punta l’id.

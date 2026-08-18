@@ -21,7 +21,7 @@ Gli **use case** (sezione in coda a ogni spec) li scrive **AIUxer**: utilizzo, p
 
 Prima di implementare una slice di UI: skill `surface-map` del plugin `ai-native`, poi `project-book`. Niente codice di catalogo finché il Book slice non è approvato.
 
-Loop (id stabile spec ↔ Book ↔ codice): [`LOOPS.md`](./LOOPS.md). Corrente: **A3** approvato. A2 shippata (`849f86a`).
+Loop (id stabile spec ↔ Book ↔ codice): [`LOOPS.md`](./LOOPS.md). Corrente: **C1** approvato (thread + compose). Frame dopo: M1 memoria+profilo. P3 ancora in review, altro job.
 
 ## Indice
 

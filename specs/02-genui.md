@@ -283,6 +283,18 @@ Evals: U-p-data (tap 02/07 → data 2026-07-02; gli altri gio non violati). U5 r
 
 ---
 
+## Loop C1 (2026-08-18)
+
+P2 chiuso: tap = data. P1 ha fatto del composer un **gateway one-shot**. Questo loop costruisce la famiglia già in §4.1: **rail conversazionale**.
+
+1. Il composer è una **storia** di `copilot-turn` (cap di sessione). I widget del catalogo stanno *dentro* il turno. Chat = casa resta vietata (U1).
+2. Path felice: una `compone` (schema: testo + 0–1 tool allowlist + 1–3 chip). Il modello non calcola e non scrive. Regex / enum-intent solo se il modello è giù.
+3. What's next = chip dell’ultimo turno. Dopo una write confermata: turno det di chiusura + chip (0 LLM). P-F.
+
+Evals: U-c-filo, U-c-dentro, U-c-next, U-c-compose, U-c-degrado. U1 e U5 restano.
+
+---
+
 ## Loop P3 (2026-08-17)
 
 P2 chiuso: tap = data. **P3:** un vincolo di fascia è violato se il turno **si sovrappone** a quella fascia, non se *inizia* in quella fascia.

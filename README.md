@@ -107,15 +107,40 @@ Il confine di fiducia è verificato dal codice: i moduli deterministici non
 importano gli agenti (`tests/test_confine.py`), e solo il gate `pubblica`
 scrive in `kb/turni/`.
 
-## Come si progetta
+## Ciclo di sviluppo
 
-Plugin [`ai-native`](https://github.com/fmondora/AI-Engineering): **AIUxer** (superficie) e **AIEngineer** (architettura, costo, evals).
+Si costruisce dalle spec, non dalla chat. Ogni giro ha un **id** (`A1`, `P2`…)
+citato uguale in spec, Book e commit. Indice: [`specs/LOOPS.md`](specs/LOOPS.md).
+
+Plugin [`ai-native`](https://github.com/fmondora/AI-Engineering): **AIUxer**
+(superficie, *desiderabile*) e **AIEngineer** (orchestratore, costo, evals,
+*fattibile*). Le due lenti possono divergere: l'arbitro è l'esito misurato;
+su pubblicazione turni e dati retributivi il confine ha veto.
 
 ```
-surface-map  →  scelta  →  project-book  →  implementazione da Book §09
+surface-map  →  scelta direzione  →  project-book  →  ok  →  impl da Book §09
+       ↑                                                         │
+       └──────── live + evals  →  emenda spec `## Loop <id>` ────┘
 ```
 
-Niente codice di catalogo finché il Book slice non è approvato. Dettaglio per gli agenti: `AGENTS.md`.
+1. **Surface map.** Inventario di ciò che c'è (ruoli, widget, chip, gap
+   spec↔codice) e due o tre direzioni. Output in `docs/ai-native/surface-maps/`.
+2. **Scelta.** Una direzione, un id nuovo. Non si parte in parallelo su due loop.
+3. **Project book.** Sintesi dual-lens + delta rispetto al giro prima. Le slice
+   shippabili stanno in `docs/ai-native/book/09-IMPL-READY.md`. Le `specs/0N-*.md`
+   restano source of truth: il Book non le sostituisce.
+4. **Approvazione.** Niente codice di catalogo, niente tipo nuovo, niente
+   allargamento di enum, finché il Book di quel loop non è approvato.
+5. **Implementazione.** Solo le slice di §09. Le evals della spec **sono** i
+   test (`E` in `01`, `U` in `02`, …). Toccare una spec senza il suo file di
+   test è un lavoro non finito. Poi si prova sull'app, non solo `pytest`.
+6. **Chiusura.** Sezione `## Loop <id>` in coda alla spec toccata — non si
+   riscrive il corpo storico. Riga nuova in `LOOPS.md`. Il giro dopo riparte
+   dalla mappa, non da una chat.
+
+Un loop è chiuso quando l'esito si vede in casa (Anna o Francesco), non quando
+il brief è scritto. Dettaglio per gli agenti: `AGENTS.md`. Come si scrive una
+spec: `specs/README.md`.
 
 ## Fuori da questa edizione
 

@@ -119,6 +119,12 @@ Regole dure:
 3. Se l'AI è giù, i `person-shifts` restano sull'ultimo pubblicato; niente nuova bozza. Degrado onesto. `[AIUxer P-D]`
 4. I comandi di ciclo arrivano dal Copilot (traduzione NL) o dalla superficie (chip). L'orchestratore non interpreta il linguaggio.
 
+### Loop C1 — Copilot = compose (2026-08-18)
+
+P1 resta: allowlist per ruolo, niente Scheduling di default, write solo chip. Cambia il **path felice**: non si classifica un intent per uno `if`. Si **compone** un turno (`testo`, `tool` ∈ allowlist o vuoto, `chip` ⊆ catalogo). Una chiamata. I fetch sono codice. `_intent_det` è degrado, non il mestiere.
+
+E5/E10 restano. Aggiungere: due enunciati restano entrambi a schermo; il path felice scriptato non passa dalle regex di preferenza.
+
 ### Loop P1 — Copilot = gateway (2026-08-17)
 
 Il Copilot **non** è un router a regex. È l’unico ingresso parlato alla pipeline (`consult` / comando di ciclo). Classifica l’intent in un **enum chiuso** (P-A), poi invoca l’agente giusto. L’enum ⊆ chip e tool già in catalogo:
