@@ -113,6 +113,50 @@ def _flusso(request: Request) -> dict[str, Any]:
     return _FLUSSO.setdefault(sid, {"widget": []})
 
 
+#: quanti turni del copilota si tengono. È una **storia di sessione**, non una
+#: memoria: il testo libero di chi scrive non va in `kb/` e muore col logout
+#: (`05`). Otto basta per «e i prossimi giovedì?» senza diventare un archivio.
+MAX_TURNI = 8
+
+
+def _conversazione(flusso: dict[str, Any]) -> list[dict[str, Any]]:
+    return flusso.setdefault("conversazione", [])
+
+
+def _dice(flusso: dict[str, Any], testo: str) -> None:
+    """Quello che ha scritto la persona entra nel filo prima della risposta."""
+    if testo.strip():
+        _conversazione(flusso).append({"ruolo": "persona", "testo": testo.strip()})
+
+
+def _risponde(flusso: dict[str, Any], turno: dict[str, Any]) -> None:
+    """Un turno del copilota si **appende**: non sostituisce quello prima.
+
+    Sovrascrivere era il motivo per cui due frasi di seguito ne lasciavano
+    vedere una sola, e «e adesso?» non aveva niente a cui riferirsi (map C1
+    §P0.1).
+    """
+    filo = _conversazione(flusso)
+    filo.append({"ruolo": "copilota", "turno": turno})
+    #: si taglia da davanti contando i turni del copilota, così una domanda
+    #: non resta orfana della sua risposta
+    turni = 0
+    taglio = 0
+    for i in range(len(filo) - 1, -1, -1):
+        if filo[i]["ruolo"] == "copilota":
+            turni += 1
+            if turni > MAX_TURNI:
+                taglio = i + 1
+                break
+    if taglio:
+        del filo[:taglio]
+
+
+def _verso_copilota() -> RedirectResponse:
+    """Gli occhi restano dove si è scritto: il fragment è il composer."""
+    return RedirectResponse("/home#copilota", status_code=303)
+
+
 def _pulisci_flusso(request: Request) -> None:
     sid = request.cookies.get(sessioni.NOME_COOKIE) or ""
     _FLUSSO.pop(sid, None)
@@ -359,6 +403,9 @@ def _render_home(request: Request, status_code: int = 200):
             "sblocco": flusso.get("sblocco"),
             "blocco_scelto": flusso.get("blocco_scelto"),
             "conferma": flusso.get("conferma"),
+            # la storia del composer: vuota al primo paint, quindi zero
+            # `copilot-turn` a freddo (U1)
+            "conversazione": flusso.get("conversazione", []),
             "copilota_spento": flusso.get("copilota_spento", False),
         },
         status_code=status_code,
@@ -372,20 +419,21 @@ def copilota(request: Request, testo: str = Form("")):
         return RedirectResponse("/", status_code=303)
     flusso = _flusso(request)
     contesto = ctx.carica(_settimana_del_ciclo())
+    _dice(flusso, testo)
     try:
         risposta = agente_copilot.AGENTE.rispondi(testo, a, contesto)
-        flusso["widget"] = [risposta.turno, *risposta.widget]
+        # i widget stanno **dentro** il turno, non accanto: la frase e il fatto
+        # sono la stessa risposta (Book 03 Loop C1)
+        _risponde(flusso, risposta.turno)
         # solo un guasto spegne il composer: senza modello si continua a scrivere
         flusso["copilota_spento"] = risposta.spento
     except LLMGiu:
         # spento in modo onesto: i widget deterministici restano a schermo
-        flusso["widget"] = [agente_copilot.spento()]
+        _risponde(flusso, agente_copilot.spento())
         flusso["copilota_spento"] = True
     except Negato:
-        flusso["widget"] = [vista.copilot_turn(agente_copilot.RIFIUTO_ALTRUI, [])]
-    # il fragment porta gli occhi sul composer: un 303 su /home riparte in
-    # cima, e la risposta lì sembra «il copilota non ha fatto niente».
-    return RedirectResponse("/home#copilota", status_code=303)
+        _risponde(flusso, vista.copilot_turn(agente_copilot.RIFIUTO_ALTRUI, []))
+    return _verso_copilota()
 
 
 # --- chip --------------------------------------------------------------------
@@ -421,16 +469,28 @@ async def chip(request: Request, nome: str):
             if str(dati.get("motivo") or "") == "preferenza" and dati.get("data"):
                 preview, problema = _preferenza_del_giorno(dati, a)
                 if problema:
-                    flusso["widget"] = [vista.copilot_turn(problema, [])]
+                    _risponde(flusso, vista.copilot_turn(problema, []))
                     return _render_home(request, status_code=400)
-                flusso["widget"] = [preview]
-                return _verso_home()
+                # anche il gesto muto è un turno del filo: chi tocca un giorno
+                # e poi scrive «e il giovedì dopo?» deve vedere le due cose di
+                # seguito, non una al posto dell'altra (Book 02 Loop C1)
+                _dice(flusso, f"{_giorno_esteso(str(dati['data']))}: non posso")
+                _risponde(
+                    flusso,
+                    vista.copilot_turn(
+                        "Preparata: la scrivi tu confermando.",
+                        ["apri-scheda"],
+                        widget=[preview],
+                        generata=False,
+                    ),
+                )
+                return _verso_copilota()
 
             if dati.get("persona") and str(dati.get("motivo") or "") == "blocco":
                 esigi_manager(a, "chip/consulta")
                 carte, violazione, mosse, problema = _celle_del_blocco(dati, ciclo, a)
                 if problema:
-                    flusso["widget"] = [vista.copilot_turn(problema, [])]
+                    _risponde(flusso, vista.copilot_turn(problema, [], generata=False))
                     return _render_home(request, status_code=400)
                 flusso["sblocco"] = carte
                 flusso["blocco_scelto"] = violazione
@@ -445,7 +505,7 @@ async def chip(request: Request, nome: str):
                 esigi_manager(a, "chip/consulta")
                 candidati, problema = _candidati_del_gap(dati, ciclo, a)
                 if problema:
-                    flusso["widget"] = [vista.copilot_turn(problema, [])]
+                    _risponde(flusso, vista.copilot_turn(problema, [], generata=False))
                     return _render_home(request, status_code=400)
                 flusso["candidati_gap"] = candidati
                 flusso["gap_scelto"] = {
@@ -537,7 +597,7 @@ async def chip(request: Request, nome: str):
                 # Manca (o non si legge) il bersaglio: 400 sulla home con una
                 # riga che lo dice. Prima qui si passava `None` a
                 # `date.fromisoformat` e il server cadeva con un 500 (Book 07).
-                flusso["widget"] = [vista.copilot_turn(problema, [])]
+                _risponde(flusso, vista.copilot_turn(problema, [], generata=False))
                 flusso.pop("conferma", None)
                 return _render_home(request, status_code=400)
 
@@ -601,7 +661,8 @@ async def chip(request: Request, nome: str):
             )
             audit.decisione("-", "preferenza-salvata", a.slug)
             flusso["widget"] = []
-            return _verso_home()
+            _chiudi_il_giro(flusso, "salva-preferenza", a)
+            return _verso_copilota()
 
         if nome == "collega-google":
             slug = str(dati.get("persona") or a.slug)
@@ -635,7 +696,7 @@ async def chip(request: Request, nome: str):
     except Negato:
         return JSONResponse({"errore": "non autorizzato"}, status_code=403)
     except orchestratore.CicloBloccato as e:
-        flusso["widget"] = [vista.copilot_turn(str(e), [])]
+        _risponde(flusso, vista.copilot_turn(str(e), [], generata=False))
         return _verso_home()
 
     return JSONResponse({"errore": f"chip sconosciuta: {nome}"}, status_code=400)
@@ -661,6 +722,40 @@ GIORNI_ESTESI = ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "s
 def _giorno_esteso(iso: str) -> str:
     data = dt.date.fromisoformat(iso)
     return f"{GIORNI_ESTESI[data.weekday()]} {data.day:02d}/{data.month:02d}"
+
+
+def _calendario_collegato(slug: str) -> bool:
+    stato = sync_calendario.stato_widget(slug) or {}
+    return stato.get("stato") == "collegato"
+
+
+#: Tabella **chiusa**: confermare non è un muro, ma il passo dopo lo decide il
+#: codice, non un modello (Book 09 C1.3). Zero LLM: una write è già successa,
+#: e far girare il modello per dire «fatto» aggiunge solo un modo di sbagliare.
+def prossimo_dopo(azione: str, a: Attore) -> tuple[str, list[str]]:
+    if azione == "salva-preferenza":
+        chip = ["apri-scheda"]
+        if not _calendario_collegato(a.slug):
+            chip.append("collega-google")
+        return (
+            "È sulla tua scheda. Lo Scheduling la vede al prossimo ciclo.",
+            chip,
+        )
+    if azione == "collega-google":
+        return "I pubblicati vanno sul tuo calendario.", ["apri-scheda"]
+    return "", []
+
+
+def _chiudi_il_giro(flusso: dict[str, Any], azione: str, a: Attore) -> None:
+    """Dopo una write confermata, il filo ha un turno in più con delle uscite.
+
+    Le write del manager (accetta / pubblica) restano fuori: quel giro ha già
+    la sua gerarchia sulla home (A3), e infilarci una card di chat lo
+    romperebbe.
+    """
+    testo, chip = prossimo_dopo(azione, a)
+    if testo:
+        _risponde(flusso, vista.copilot_turn(testo, chip, generata=False))
 
 
 def _preferenza_del_giorno(dati: dict, a: Attore) -> tuple[dict, str]:
@@ -1156,7 +1251,10 @@ def calendario_ritorno(request: Request, code: str = "", state: str = ""):
         refresh_token=f"refresh-{a.slug}",
         email=(persona.email if persona else "") or f"{a.slug}@example.com",
     )
-    return _verso_home()
+    # tornare da Google su una home muta lascia il dubbio che non sia successo
+    # niente: il filo dice cosa cambia adesso (Book 09 C1.3)
+    _chiudi_il_giro(_flusso(request), "collega-google", a)
+    return _verso_copilota()
 
 
 # --- API JSON (authz esplicita) ---------------------------------------------

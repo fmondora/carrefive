@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .. import vista
+from ..domain import catalogo
 from ..domain.proposta import Proposta
 from ..domain.saldi import ETICHETTE
 from ..kb import persone as kb_persone
@@ -52,6 +53,40 @@ SCHEMA_INTENT = {
     "required": ["intent"],
     "properties": {"intent": {"type": "string", "enum": list(INTENT)}},
 }
+
+#: Il turno che il modello **compone**: cosa dire, quale attrezzo usare, quali
+#: chip offrire. Una chiamata sola (`01` Loop C1): niente «classifica, poi
+#: scrivi la prosa» su un intento che il codice aveva già deciso.
+#: Il modello sceglie *tipi*, mai payload: i fatti li calcola `vista`.
+SCHEMA_COMPONI = {
+    "type": "object",
+    "required": ["testo"],
+    "properties": {
+        "testo": {"type": "string"},
+        "tool": {"type": "string"},
+        "chip": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+#: Le chip che un turno può proporre, per ruolo (Book 03 Loop C1). Il direttore
+#: ne ha di più perché ha un altro mestiere, non perché conta di più.
+CHIP_LAVORATORE: tuple[str, ...] = (
+    "salva-preferenza",
+    "apri-scheda",
+    "collega-google",
+    "scollega-google",
+    "aggiorna-saldi",
+    "consulta",
+)
+CHIP_DIRETTORE: tuple[str, ...] = CHIP_LAVORATORE + (
+    "genera-bozza",
+    "accetta-bozza",
+    "rifiuta-bozza",
+    "pubblica",
+    "apri-tabellone",
+)
+#: quante mosse successive si offrono: una lista di dieci non è un suggerimento
+MAX_CHIP = 3
 
 #: Cosa può toccare **parlando** chi non è manager (`01` Loop P1). Il roster
 #: pieno (§4.3) è un attrezzo di pianificazione: un dipendente che chiede «chi
@@ -269,9 +304,124 @@ class Copilot:
         """Chip vere, non un `consulta` nudo che non fa niente (Book A1)."""
         return ["apri-scheda", "apri-tabellone"] if attore.manager else ["apri-scheda"]
 
+    # --- compose -------------------------------------------------------------
+
+    def chip_del_ruolo(self, attore: Attore) -> tuple[str, ...]:
+        return CHIP_DIRETTORE if attore.manager else CHIP_LAVORATORE
+
+    def _chip_proposte(self, grezze: list, attore: Attore) -> list[str]:
+        """Chip = prossimo passo, dentro il catalogo e dentro il ruolo.
+
+        Si scartano anche quelle che senza payload non vogliono dire niente
+        (`sposta-turno` nuda è un 400, non una mossa — Book A1). Se resta
+        vuoto si dà quella che porta sempre da qualche parte, non zero: un
+        turno senza uscite è un vicolo cieco.
+        """
+        ammesse = set(self.chip_del_ruolo(attore))
+        fuori: list[str] = []
+        for c in grezze or []:
+            nome = str(c).strip()
+            if nome in ammesse and nome not in fuori:
+                fuori.append(nome)
+        tenute, _ = catalogo.filtra_chip(fuori[:MAX_CHIP])
+        return tenute or ["apri-scheda"]
+
+    def _esegui_tool(
+        self, nome: str, domanda: str, attore: Attore, contesto: Contesto
+    ) -> tuple[list[dict[str, Any]], Proposta | None, str]:
+        """Il tool è codice. Il modello lo **sceglie**, non lo esegue.
+
+        Ritorna `(widget, proposta, problema)`. Un tool fuori allowlist non è
+        un errore da nascondere: è una domanda legittima con una risposta che
+        non è mia da dare (`05` §4.2).
+        """
+        if not nome:
+            return [], None, ""
+        if nome not in self.tool_per(attore):
+            return [], None, COPRI_NON_MIO
+        try:
+            if nome == "mostra_turni":
+                return [self._mostra_turni(attore, self._bersaglio(domanda, attore))], None, ""
+            if nome == "mostra_saldi":
+                return [self._mostra_saldi(attore, self._bersaglio(domanda, attore))], None, ""
+            if nome == "prepara_preferenza":
+                # sempre sulla **propria** scheda: nessuno dichiara un vincolo
+                # per qualcun altro (`02` Loop P1)
+                return [self._prepara_preferenza(attore, attore.slug, domanda)], None, ""
+        except Negato:
+            return [], None, RIFIUTO_ALTRUI
+        consulente = {
+            "consulta_scheduling": self._consulta_scheduling,
+            "consulta_compliance": self._consulta_compliance,
+            "consulta_secondo": self._consulta_secondo,
+        }.get(nome)
+        if consulente is None:
+            return [], None, ""
+        proposta = consulente(attore, domanda, contesto)
+        return (
+            [vista.rationale(proposta.rationale, proposta.fonti, proposta.confidenza)],
+            proposta,
+            "",
+        )
+
+    def compone(self, domanda: str, attore: Attore, contesto: Contesto) -> Risposta:
+        """Il path felice: **un** turno, una chiamata.
+
+        Il modello sceglie cosa dire, quale attrezzo dell'allowlist usare e
+        quali mosse offrire. Non calcola ore, non scrive, non inventa tipi: i
+        widget li costruisce `vista` dal tool eseguito qui (Book 03 Loop C1).
+
+        Alza `LLMGiu` / `SchemaNonRispettato` verso `rispondi`, che degrada sul
+        router P1: le regex restano, ma come rete di sicurezza, non come
+        mestiere (`01` Loop C1).
+        """
+        attrezzi = list(self.tool_per(attore))
+        dati, _ = llm().genera_json(
+            prompt=(
+                "Sei il copilota di chi lavora in un supermercato. Componi UN turno.\n"
+                "Rispondi in italiano, breve e concreto. Non inventare numeri, orari o nomi: "
+                "i dati li mette il sistema dal tool che scegli.\n"
+                f"attrezzi disponibili (scegline al massimo uno, o \"\"): {attrezzi}\n"
+                f"chip offribili (da una a tre): {list(self.chip_del_ruolo(attore))}\n"
+                f"richiesta: {allowlist.blocco_dati(domanda)}"
+            ),
+            schema=SCHEMA_COMPONI,
+            sistema="copilot: compone un turno di catalogo. Solo JSON.",
+        )
+        widget, proposta, problema = self._esegui_tool(
+            str(dati.get("tool") or "").strip(), domanda, attore, contesto
+        )
+        testo = problema or str(dati.get("testo") or "").strip()
+        if not testo:
+            testo = NON_HO_CAPITO
+        chip = self._chip_proposte(dati.get("chip") or [], attore)
+        return Risposta(
+            turno=vista.copilot_turn(
+                testo, chip, widget=widget, generata=not problema
+            ),
+            widget=widget,
+            proposta=proposta,
+        )
+
     # --- ingresso ------------------------------------------------------------
 
     def rispondi(self, testo: str, attore: Attore, contesto: Contesto) -> Risposta:
+        """Path felice: `compone`. Degrado: il router a enum di P1.
+
+        L'ordine è il contratto di C1: le regex non sono più il mestiere, sono
+        quello che resta quando il modello non c'è (`01` Loop C1). Con
+        `TM_LLM=fake` e nessun copione si passa sempre di qui — ed è giusto
+        così: la demo deve funzionare anche senza modello.
+        """
+        domanda = (testo or "").strip()
+        if domanda:
+            try:
+                return self.compone(domanda, attore, contesto)
+            except (LLMNonConfigurato, SchemaNonRispettato, LLMGiu):
+                pass
+        return self._instrada(testo, attore, contesto)
+
+    def _instrada(self, testo: str, attore: Attore, contesto: Contesto) -> Risposta:
         domanda = (testo or "").strip()
         basso = domanda.lower()
         widget: list[dict[str, Any]] = []
@@ -304,7 +454,7 @@ class Copilot:
             fatti = f"Comando riconosciuto: {comando}. Lo esegui tu con la chip."
             chip = [comando]
             testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
-            turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+            turno = vista.copilot_turn(testo_copy, chip_copy, widget=widget, motivo=motivo)
             return Risposta(
                 turno=turno, widget=widget, comando=comando, degradato=bool(motivo), motivo=motivo
             )
@@ -319,7 +469,7 @@ class Copilot:
             )
             chip = ["salva-preferenza"]
             testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
-            turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+            turno = vista.copilot_turn(testo_copy, chip_copy, widget=widget, motivo=motivo)
             return Risposta(turno=turno, widget=widget, degradato=bool(motivo), motivo=motivo)
 
         # 3. saldi
@@ -341,7 +491,7 @@ class Copilot:
                 stale = " (non in tempo reale)" if saldi.get("stale") else ""
                 fatti = f"{voci}{stale}. Fonte: {saldi['fonte']}, aggiornato {saldi['aggiornato_at']}."
             testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
-            turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+            turno = vista.copilot_turn(testo_copy, chip_copy, widget=widget, motivo=motivo)
             return Risposta(turno=turno, widget=widget, degradato=bool(motivo), motivo=motivo)
 
         # 4. turni
@@ -356,7 +506,7 @@ class Copilot:
                 f"Adesso: {adesso['orario']}." if adesso else "Adesso non sei in turno."
             ) + f" Prossimi {len(turni['prossimi'])} turni, {turni['ore_periodo']:g}h nel periodo."
             testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
-            turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+            turno = vista.copilot_turn(testo_copy, chip_copy, widget=widget, motivo=motivo)
             return Risposta(turno=turno, widget=widget, degradato=bool(motivo), motivo=motivo)
 
         # 5. `copri`: domanda di dominio sul piano. È l'unico intent che apre
@@ -390,7 +540,7 @@ class Copilot:
         widget.append(vista.rationale(proposta.rationale, proposta.fonti, proposta.confidenza))
         fatti = proposta.rationale
         testo_copy, chip_copy, motivo = self._copy(domanda, fatti, chip)
-        turno = vista.copilot_turn(testo_copy, chip_copy, motivo=motivo)
+        turno = vista.copilot_turn(testo_copy, chip_copy, widget=widget, motivo=motivo)
         return Risposta(
             turno=turno, widget=widget, proposta=proposta, degradato=bool(motivo), motivo=motivo
         )

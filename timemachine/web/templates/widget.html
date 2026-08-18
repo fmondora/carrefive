@@ -323,10 +323,16 @@
     <p class="meta">La risposta del modello era fuori formato: tengo i dati calcolati.</p>
   {% endif %}
   <p>{{ w.testo }}</p>
+  {# I widget stanno **dentro** il turno, non al suo posto: il turno è la
+     busta (Book 03 Loop C1). Prima `scheda-preview` sostituiva il
+     `copilot-turn` e la frase spariva; ora la frase e il fatto sono la
+     stessa risposta. #}
+  {% for figlio in w.widget or [] %}{{ render(figlio) }}{% endfor %}
   {% if w.chip %}
     <div class="chip-riga">
+      {# le chip sono il **prossimo passo**, non il submit di un ramo #}
       {% for c in w.chip %}
-        <form method="post" action="/chip/{{ c }}" style="display:inline"><button class="chip">{{ c|replace("-", " ") }}</button></form>
+        <form method="post" action="/chip/{{ c }}" style="display:inline"><button class="chip">{{ ETICHETTE_CHIP.get(c, c|replace("-", " ")) }}</button></form>
       {% endfor %}
     </div>
   {% endif %}

@@ -273,7 +273,11 @@ def test_u_composer_det(client, sessione_di, llm_finto):
     il composer qui vorrebbe dire che dopo «giovedì ho pianoforte» non si può
     più scrivere niente (Book 08, riga «Composer spento»).
     """
-    llm_finto.risposte = ["non è json", "nemmeno questo"]
+    # `per_agente` invece di una coda: così il canary non dipende da **quante**
+    # chiamate fa l'implementazione (C1 ne aggiunge una, `compone`). Quello che
+    # deve restare vero è che il modello ha risposto, fuori schema, e che questo
+    # non è un guasto.
+    llm_finto.per_agente = {"copilot": "non è json"}
     sessione_di("anna-mondora")
     r = client.post(
         "/copilota", data={"testo": "giovedì pomeriggio ho pianoforte"}, follow_redirects=True
@@ -288,10 +292,9 @@ def test_u_composer_det(client, sessione_di, llm_finto):
 def test_u_composer_det_unita(anna, contesto, llm_finto):
     from timemachine.agents import copilot as agente_copilot
 
-    # due chiamate al modello: prima l'intent, poi la prosa. Entrambe fuori
-    # schema (`retry=1` → due tentativi a testa): il gateway cade
-    # sull'euristica, la prosa si butta, i fatti restano.
-    llm_finto.risposte = ["non è json", "nemmeno questo", "né questo", "e nemmeno"]
+    # Ogni chiamata risponde fuori schema, quante che siano: `compone` prova e
+    # fallisce, il router degrada, la prosa si butta. I fatti restano.
+    llm_finto.per_agente = {"copilot": "non è json"}
     risposta = agente_copilot.AGENTE.rispondi("giovedì ho pianoforte", anna, contesto)
     assert risposta.motivo == "schema"
     assert risposta.spento is False
@@ -1204,3 +1207,225 @@ def test_la_chip_nuda_sposta_turno_non_e_nel_guscio(manager):
 
     assert "sposta-turno" not in CHIP_PER_STATO["attesa_umano"]
     assert "sposta-turno" in catalogo.CHIP_CON_CONFERMA
+
+# --- canary slice C1 (specs `01`/`02` Loop C1) -------------------------------
+
+
+def _filo_di(client):
+    from timemachine.auth import sessioni
+    from timemachine.web.app import _FLUSSO
+
+    sid = client.cookies.get(sessioni.NOME_COOKIE)
+    return _FLUSSO.get(sid, {}).get("conversazione", [])
+
+
+def _composer(html):
+    return html.split('class="composer"')[1]
+
+
+def test_u_c_filo(client, sessione_di):
+    """U-c-filo: due frasi di seguito si vedono **entrambe**.
+
+    Prima ogni enunciato era un RPC che sovrascriveva il precedente: «e adesso?»
+    non aveva niente a cui riferirsi, e ricaricare era amnesia (map C1 §P0.1).
+    """
+    sessione_di("anna-mondora")
+
+    # a freddo la chat non esiste: la casa e' le due card (U1)
+    html = client.get("/home").text
+    assert 'data-tipo="copilot-turn"' not in html
+    assert _filo_di(client) == []
+
+    r = client.post("/copilota", data={"testo": "ciao!"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"].endswith("#copilota")
+    client.post("/copilota", data={"testo": "quante ferie ho?"})
+
+    html = client.get("/home").text
+    composer = _composer(html)
+    assert composer.count('data-tipo="copilot-turn"') == 2  # tutte e due
+    assert "ciao!" in composer and "quante ferie ho?" in composer  # e le domande
+    assert composer.index("ciao!") < composer.index("quante ferie ho?")
+
+    ruoli = [v["ruolo"] for v in _filo_di(client)]
+    assert ruoli == ["persona", "copilota", "persona", "copilota"]
+
+
+def test_u_c_filo_ha_un_tetto(client, sessione_di):
+    """Storia di sessione, non archivio: oltre il cap si taglia da davanti."""
+    from timemachine.web.app import MAX_TURNI
+
+    sessione_di("anna-mondora")
+    for i in range(MAX_TURNI + 3):
+        client.post("/copilota", data={"testo": f"domanda numero {i}"})
+
+    filo = _filo_di(client)
+    turni = [v for v in filo if v["ruolo"] == "copilota"]
+    assert len(turni) == MAX_TURNI
+    # la domanda piu' vecchia e' uscita, l'ultima c'e'
+    testi = " ".join(v.get("testo", "") for v in filo if v["ruolo"] == "persona")
+    assert "domanda numero 0" not in testi
+    assert f"domanda numero {MAX_TURNI + 2}" in testi
+    # e nessuna risposta e' rimasta orfana: si comincia da una domanda
+    assert filo[0]["ruolo"] == "persona"
+
+
+def test_u_c_dentro(client, sessione_di):
+    """U-c-dentro: il widget sta **dentro** il turno, non al suo posto.
+
+    `scheda-preview` sostituiva il `copilot-turn` e la frase spariva: il fatto
+    senza la risposta, o la risposta senza il fatto (Book 03 Loop C1).
+    """
+    sessione_di("anna-mondora")
+    client.post("/copilota", data={"testo": "suono il piano il giovedì"})
+
+    html = client.get("/home").text
+    composer = _composer(html)
+    turno = composer.split('data-tipo="copilot-turn"')[1]
+    # la preview e' dentro la section del turno, prima che si chiuda
+    assert 'data-tipo="scheda-preview"' in turno
+    assert turno.index('data-tipo="scheda-preview"') < turno.index("</section>")
+
+    voce = [v for v in _filo_di(client) if v["ruolo"] == "copilota"][-1]
+    figli = [w["tipo"] for w in voce["turno"]["widget"]]
+    assert "scheda-preview" in figli
+
+
+def test_u_c_next(client, sessione_di):
+    """U-c-next: confermare non e' un muro. Tabella det, zero LLM."""
+    sessione_di("anna-mondora")
+    client.post("/copilota", data={"testo": "suono il piano il giovedì"})
+    prima = len([v for v in _filo_di(client) if v["ruolo"] == "copilota"])
+
+    r = client.post(
+        "/chip/salva-preferenza",
+        data={
+            "persona": "anna-mondora",
+            "vincolo": "no_pomeriggio: gio",
+            "storia": "lezione di pianoforte",
+            "conferma": "1",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303 and r.headers["location"].endswith("#copilota")
+
+    filo = [v for v in _filo_di(client) if v["ruolo"] == "copilota"]
+    assert len(filo) == prima + 1
+    chiusura = filo[-1]["turno"]
+    assert "sulla tua scheda" in chiusura["testo"]
+    assert chiusura["chip"]  # almeno una uscita
+    assert "apri-scheda" in chiusura["chip"]
+    assert chiusura["generata"] is False  # niente modello per dire «fatto»
+
+    html = client.get("/home").text
+    assert "sulla tua scheda" in _composer(html)
+    assert "disabled" not in _composer(html)  # il campo resta acceso
+
+
+def test_u_c_next_offre_il_calendario_solo_se_serve(client, sessione_di):
+    from timemachine.web.app import prossimo_dopo
+    from timemachine.security.authz import Attore
+
+    anna = Attore("anna-mondora")
+    testo, chip = prossimo_dopo("salva-preferenza", anna)
+    assert "collega-google" in chip  # non collegata: e' un'uscita utile
+
+    testo, chip = prossimo_dopo("collega-google", anna)
+    assert "calendario" in testo and chip == ["apri-scheda"]
+
+    assert prossimo_dopo("pubblica", anna) == ("", [])  # A3 non si tocca
+
+
+def test_u_c_compose(client, sessione_di, llm_finto):
+    """U-c-compose: il path felice compone un turno, non instrada una frase.
+
+    Con un copione valido il modello sceglie testo, attrezzo e chip: le regex
+    di preferenza non vengono nemmeno interrogate (`01` Loop C1).
+    """
+    from timemachine.agents import copilot as agente_copilot
+
+    llm_finto.per_agente = {
+        "compone": {
+            "testo": "Ecco i tuoi saldi.",
+            "tool": "mostra_saldi",
+            "chip": ["apri-scheda", "aggiorna-saldi", "pubblica", "genera-bozza"],
+        }
+    }
+    sessione_di("anna-mondora")
+    client.post("/copilota", data={"testo": "quante ferie mi restano?"})
+
+    voce = [v for v in _filo_di(client) if v["ruolo"] == "copilota"][-1]["turno"]
+    assert voce["testo"] == "Ecco i tuoi saldi."
+    # il widget lo ha costruito `vista` dal tool, non il modello
+    assert [w["tipo"] for w in voce["widget"]] == ["person-balances"]
+    assert voce["widget"][0]["voci"][0]["residuo_ore"] == 96
+    # chip: filtrate sul ruolo e tagliate a tre. `pubblica` e `genera-bozza`
+    # sono del direttore: fuori.
+    assert voce["chip"] == ["apri-scheda", "aggiorna-saldi"]
+
+
+def test_u_c_compose_non_passa_dalle_regex(anna, contesto, llm_finto, monkeypatch):
+    """Il path felice non interroga `_e_preferenza`: non e' piu' il mestiere."""
+    from timemachine.agents import copilot as agente_copilot
+
+    llm_finto.per_agente = {
+        "compone": {"testo": "Preparata.", "tool": "prepara_preferenza", "chip": ["salva-preferenza"]}
+    }
+    visti = []
+    vero = agente_copilot.Copilot._intent_det
+
+    def spia(self, basso):
+        visti.append(basso)
+        return vero(self, basso)
+
+    monkeypatch.setattr(agente_copilot.Copilot, "_intent_det", spia)
+
+    risposta = agente_copilot.AGENTE.rispondi("suono il piano il giovedì", anna, contesto)
+    assert visti == []  # nessun degrado: l'euristica resta ferma
+    assert [w["tipo"] for w in risposta.turno["widget"]] == ["scheda-preview"]
+    assert risposta.turno["chip"] == ["salva-preferenza"]
+
+
+def test_u_c_compose_anna_non_apre_lo_scheduling(anna, contesto, llm_finto):
+    """Tool fuori allowlist: rifiuto onesto, non un dump di colleghi."""
+    from timemachine.agents import copilot as agente_copilot
+
+    llm_finto.per_agente = {
+        "compone": {
+            "testo": "Guarda chi copre giovedì.",
+            "tool": "consulta_scheduling",
+            "chip": ["apri-scheda"],
+        }
+    }
+    risposta = agente_copilot.AGENTE.rispondi("chi copre giovedì?", anna, contesto)
+    assert risposta.turno["widget"] == []
+    assert "non vedo il piano degli altri" in risposta.turno["testo"]
+    assert risposta.turno["generata"] is False  # non e' prosa del modello
+    assert risposta.turno["chip"]
+
+
+def test_u_c_degrado(client, sessione_di, llm_finto):
+    """U-c-degrado: senza modello si continua a lavorare, e si dice.
+
+    `compone` fallisce, il router P1 prende il turno: le regex sono la rete di
+    sicurezza, non il mestiere. Il composer resta acceso.
+    """
+    sessione_di("anna-mondora")
+
+    # nessun copione: il fake alza LLMNonConfigurato a ogni chiamata
+    client.post("/copilota", data={"testo": "suono il piano il giovedì"})
+    voce = [v for v in _filo_di(client) if v["ruolo"] == "copilota"][-1]["turno"]
+    assert [w["tipo"] for w in voce["widget"]] == ["scheda-preview"]
+    assert voce["motivo"] == "non-configurato"
+
+    html = client.get("/home").text
+    assert "disabled" not in _composer(html)
+
+    # guasto vero: si dice, e il campo si spegne
+    llm_finto.giu = True
+    client.post("/copilota", data={"testo": "e i prossimi giovedì?"})
+    html = client.get("/home").text
+    assert "Copilota non disponibile" in html
+    assert "disabled" in _composer(html)
+    # ma il filo di prima e' ancora li'
+    assert "suono il piano il giovedì" in _composer(html)

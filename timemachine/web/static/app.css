@@ -22,8 +22,13 @@ a { color: var(--foglia); }
   margin: 0 auto;
   padding: var(--s3) var(--s2) 96px;
 }
-body:has(.composer .card) .guscio {
-  padding-bottom: 360px;
+/* Il composer è ancorato in basso: quando ospita il filo si mangia mezzo
+   schermo, e la casa sotto va lasciata raggiungibile. La riserva segue il
+   tetto del filo (52vh), non un numero a occhio che va bene su un telefono e
+   non su un portatile. */
+body:has(.composer .card) .guscio,
+body:has(.filo) .guscio {
+  padding-bottom: calc(52vh + 120px);
 }
 
 .guscio--largo { max-width: 1100px; }
@@ -356,3 +361,31 @@ body:has(.composer .card) .guscio {
 }
 .errore { color: var(--rosso-blocco); font-size: var(--testo-body); }
 .qr { max-width: 240px; }
+
+/* --- il filo (chrome del composer, non catalogo) -------------------------- */
+
+/* Una storia, non l'ultimo colpo. Scorre da sola quando cresce: il composer
+   resta ancorato in basso e la casa sotto non si sposta (Book 02 Loop C1). */
+.filo {
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  max-height: 52vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+/* Quello che ha scritto la persona: allineato a destra, senza card — non è
+   un widget del catalogo, è la sua voce. */
+.detto {
+  align-self: flex-end;
+  max-width: 85%;
+  margin: 0;
+  padding: 8px var(--s2);
+  border-radius: var(--raggio-chip);
+  background: var(--foglia-acqua);
+  color: var(--inchiostro);
+  font-size: var(--testo-body);
+}

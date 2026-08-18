@@ -66,13 +66,19 @@
 </main>
 
 <div class="composer" id="copilota" data-spento="{{ 1 if copilota_spento else 0 }}">
-  {# La risposta sta dove si è scritto. Se c'è una preview, quella è il
-     turno: la card «preparata la modifica» sopra ruba lo spazio a Conferma. #}
-  {% set preview = widget | selectattr("tipo", "equalto", "scheda-preview") | list %}
-  {% if preview %}
-    {% for w in preview %}{{ W.render(w) }}{% endfor %}
-  {% else %}
-    {% for w in widget if w.tipo == "copilot-turn" %}{{ W.render(w) }}{% endfor %}
+  {# Il filo, non l'ultimo colpo. Due frasi di seguito si vedono entrambe, e i
+     widget stanno dentro il loro turno (Book 02 Loop C1). Vuoto al primo
+     paint: la chat non e' la casa (U1). #}
+  {% if conversazione %}
+    <div class="filo">
+      {% for voce in conversazione %}
+        {% if voce.ruolo == "persona" %}
+          <p class="detto">{{ voce.testo }}</p>
+        {% else %}
+          {{ W.render(voce.turno) }}
+        {% endif %}
+      {% endfor %}
+    </div>
   {% endif %}
   <form method="post" action="/copilota">
     <input name="testo" placeholder="{{ 'Copilota non disponibile' if copilota_spento else 'Scrivi al copilota…' }}"
