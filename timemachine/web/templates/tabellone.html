@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% import "widget.html" as W %}
+{% block titolo %}Tabellone — Le Rocce{% endblock %}
+
+{% block corpo %}
+{# Vista rara (`02` §4.1): si apre solo con la chip, e chiuderla riporta alla
+   home persona. Non è uno stato del ciclo, non è il landing. #}
+<main class="guscio guscio--largo">
+  <header class="testata">
+    <h1>Tabellone</h1>
+    <span class="pv"><a href="/home">chiudi</a></span>
+  </header>
+  {% if griglia %}
+    {{ W.week_grid(griglia) }}
+  {% else %}
+    {# niente fallback all'ultima pubblicata: dire «ecco il foglio» mostrando
+       un'altra settimana è peggio che dire «non c'è» (Book 07). #}
+    <section class="card">
+      <p>Nessun piano per la settimana del {{ settimana }}.</p>
+      <p class="meta">Genera una bozza dalla home, o apri un'altra settimana con <code>?settimana=</code>.</p>
+    </section>
+  {% endif %}
+</main>
+{% endblock %}

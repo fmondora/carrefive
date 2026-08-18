@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block titolo %}Scheda {{ persona.nome }} — Le Rocce{% endblock %}
+
+{% block corpo %}
+{# Vista deterministica della md (`02` chip `apri-scheda`). Niente generazione:
+   quello che c'è nel file è quello che si legge. #}
+<main class="guscio">
+  <header class="testata">
+    <h1>{{ persona.nome }}</h1>
+    <span class="pv"><a href="/home">chiudi</a></span>
+  </header>
+
+  <section class="card">
+    <div class="etichetta">mansioni</div>
+    <ul class="prossimi">
+      {% for m in persona.nomi_mansioni() %}<li><span class="orario">{{ m }}</span></li>{% endfor %}
+    </ul>
+    <div class="etichetta">vincoli</div>
+    <ul class="prossimi">
+      {% for p in persona.preferenze %}
+        <li><span class="orario">{{ p.vincolo }}</span>
+            <span class="mansione">{{ p.origine }}{% if mia and p.storia %} · «{{ p.storia }}»{% endif %}</span></li>
+      {% else %}
+        <li class="mansione">Nessuno.</li>
+      {% endfor %}
+    </ul>
+    {% if not mia %}<p class="meta">La storia dietro una preferenza resta alla persona.</p>{% endif %}
+  </section>
+
+  <section class="card">
+    <div class="fonti"><span>{{ path }}</span></div>
+    <pre style="white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--testo-meta)">{{ testo }}</pre>
+  </section>
+</main>
+{% endblock %}

@@ -1,0 +1,54 @@
+/* Token del design system (`06` §4.2).
+ *
+ * Un hex sparso in un componente è un fail di review: i colori vivono solo qui.
+ * Tono: fresco editoriale — carta, aria, un accento vegetale. Niente
+ * viola-gradient, niente Inter come display, niente dark mode (il fresco è luce).
+ */
+
+:root {
+  /* superfici */
+  --carta: #f6f1e8;
+  --carta-alta: #fffcf7;
+  --inchiostro: #1c1915;
+  --inchiostro-muto: #6b6459;
+  --linea: #e6dfd2;
+
+  /* segnali */
+  --foglia: #2a7a56;
+  --foglia-acqua: #e4f3eb;
+  --albicocca: #c45c26;
+  --albicocca-acqua: #f8e6d8;
+  --rosso-blocco: #b42318;
+  --ambra-gap: #b45309;
+
+  /* tipografia — Fraunces in display, Source Sans 3 in UI.
+     In produzione i font si self-hostano (GDPR `05`): niente CDN di terzi. */
+  --font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Source Sans 3", "Source Sans Pro", "Avenir Next", "Segoe UI", Helvetica, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+
+  --testo-meta: 0.75rem;   /* 12 */
+  --testo-body: 0.875rem;  /* 14 */
+  --testo-ui: 1rem;        /* 16 */
+  --testo-titolo: 1.25rem; /* 20 */
+  --testo-ora: 2.25rem;    /* 36 */
+
+  /* spazio: base 8 */
+  --s1: 8px;
+  --s2: 16px;
+  --s3: 24px;
+  --s4: 32px;
+
+  --raggio-card: 16px;
+  --raggio-chip: 999px;
+  --raggio-input: 10px;
+
+  --ombra: 0 1px 2px rgba(28, 25, 21, 0.04), 0 8px 24px rgba(28, 25, 21, 0.06);
+  --motion: 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion: 1ms linear;
+  }
+}

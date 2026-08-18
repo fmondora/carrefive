@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block titolo %}Non ancora entrate — Le Rocce{% endblock %}
+
+{% block corpo %}
+<main class="guscio">
+  <header class="testata">
+    <h1>Non ancora entrate</h1>
+    <span class="pv"><a href="/home">torna ai turni</a></span>
+  </header>
+
+  {# Solo slug, nome e (se c'è) email. Niente saldi, niente preferenze (`07` §4.2). #}
+  {% if messaggio %}<section class="card"><p>{{ messaggio }}</p>
+    {% if link %}<p class="fonti"><span>{{ link }}</span></p>{% endif %}
+    {% if qr %}<div class="qr">{{ qr|safe }}</div>{% endif %}
+  </section>{% endif %}
+
+  <section class="card">
+    <ul class="prossimi">
+      {% for p in persone %}
+        <li>
+          <span class="orario">{{ p.nome }}</span>
+          <span class="mansione">{{ p.email or "—" }} · {{ p.stato }}</span>
+          <form method="post" action="/attivatore" class="chip-riga">
+            <input type="hidden" name="persona" value="{{ p.slug }}">
+            <input type="text" name="email" value="{{ p.email }}" placeholder="email">
+            <button class="chip" name="azione" value="invia-attivazione">invia attivazione</button>
+            <button class="chip" name="azione" value="mostra-qr">mostra QR</button>
+            <button class="chip" name="azione" value="revoca-invito">revoca invito</button>
+          </form>
+        </li>
+      {% else %}
+        <li class="mansione">Sono entrate tutte.</li>
+      {% endfor %}
+    </ul>
+  </section>
+</main>
+{% endblock %}

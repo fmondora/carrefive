@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% import "widget.html" as W %}
+{% block titolo %}Conferma — Le Rocce{% endblock %}
+
+{% block corpo %}
+{# Approval card (Beautiful UI #04, `06` §4.3): domanda in chiaro, scelte
+   chiuse, e — regola «chi non è nella stanza» (`05`) — chi viene toccato. #}
+<main class="guscio">
+  <section class="card conferma">
+    <p class="domanda">{{ domanda }}</p>
+    {% if toccati %}
+      <div class="etichetta">Chi è toccato</div>
+      <ul class="prossimi toccati">
+        {% for t in toccati %}
+          <li><span class="orario">{{ t.persona }}</span><span class="mansione">{{ t.cosa }}</span></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if blocco %}
+      <p class="errore">Compliance blocca: finché resta così non potrai pubblicare.</p>
+    {% endif %}
+    {% if avvisi %}
+      <div class="etichetta">Da guardare, non blocca</div>
+      <ul class="prossimi">
+        {% for a in avvisi %}<li class="mansione">{{ a }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+    <form method="post" action="{{ azione }}" class="chip-riga">
+      {% for k, v in campi.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <button class="chip chip--primaria" name="conferma" value="1">{{ conferma_testo or "Conferma" }}</button>
+      <button class="chip" name="conferma" value="0">Annulla</button>
+    </form>
+  </section>
+
+  {% for w in widget %}{{ W.render(w) }}{% endfor %}
+</main>
+{% endblock %}

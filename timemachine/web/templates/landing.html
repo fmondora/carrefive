@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titolo %}TIME MACHINE — Le Rocce{% endblock %}
+
+{% block corpo %}
+{# Landing pubblica (`07` §4.6): una card, nessun turno di nessuno, nessun
+   nome di collega, nessun «Registrati». Chi entra è già del punto vendita. #}
+<main class="landing">
+  <h1>I tuoi turni</h1>
+  <p class="meta">Le Rocce — Poggiridenti</p>
+
+  <section class="card">
+    {% if errore %}<p class="errore">{{ errore }}</p>{% endif %}
+    <form method="post" action="/login">
+      <label class="campo">
+        <span class="etichetta">uid o email</span>
+        <input type="text" name="uid" autocomplete="username" required>
+      </label>
+      <label class="campo">
+        <span class="etichetta">password</span>
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button class="chip chip--primaria">entra</button>
+    </form>
+    <div class="chip-riga">
+      <a class="chip" href="/login/google">entra con Google</a>
+      <a class="chip" href="/password-dimenticata">password dimenticata</a>
+    </div>
+  </section>
+
+  <p class="meta">Ti ha invitato Emilio? Apri il link della mail o inquadra il QR.</p>
+  <form method="get" action="/attiva" class="chip-riga">
+    <input type="text" name="t" placeholder="incolla il codice dell'invito">
+    <button class="chip">apri l'invito</button>
+  </form>
+</main>
+{% endblock %}

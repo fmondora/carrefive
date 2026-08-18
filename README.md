@@ -4,7 +4,60 @@ Sistema agentico + GenUI per i turni di un punto vendita GDO.
 
 Pilota: **Le Rocce**, Poggiridenti. Invariante: **l'AI propone, l'umano dispone, il calcolo è deterministico.**
 
-Questo repo è ancora solo specifiche e knowledge. Non c'è runtime.
+Il runtime implementa le spec `01`–`07`: pacchetto `timemachine/`, superficie web,
+CLI `tm`. Le evals delle spec sono la suite di test.
+
+## Come si prova
+
+```bash
+python3.12 -m pip install -e ".[dev]"
+
+python3.12 -m pytest -q     # le evals E, U, C, S, G, D, L + i 22 use case
+./demo.sh                   # http://127.0.0.1:8770 — landing, poi la home persona
+```
+
+`demo.sh` copia `kb/` in una directory usa-e-getta (l'archivio del pilota non si
+tocca), attiva due account — `anna@lerocce.it` e `francesco@lerocce.it`, password
+`settelune2026` — e ferma l'orologio a lunedì 29/06/2026 14:05, che è la
+settimana pubblicata in `kb/turni/`: così «Adesso» è un turno davvero in corso.
+
+Anna è una dipendente, Francesco è manager e attivatore (l'Emilio di `07`).
+
+Primo giro a mano:
+
+```bash
+tm ruolo francesco --aggiungi manager attivatore   # Emilio: attiva ed è manager
+tm invita anna-mondora --da francesco --email anna@example.com
+tm bozza --settimana 2026-07-06 --da francesco     # genera, non pubblica
+tm import-saldi --file export-studio.csv --at 2026-08-16
+tm scan --ci                                       # matcher di sicurezza (`05`)
+```
+
+### Il copilota
+
+Il backend del modello si sceglie da solo, in quest'ordine:
+
+1. **la chiave**, se l'SDK ne risolve una — `ANTHROPIC_API_KEY`,
+   `ANTHROPIC_AUTH_TOKEN` o il profilo di `ant auth login`, la stessa catena
+   che usa Claude Code. Modello di default `claude-opus-5`.
+2. **la CLI** `claude -p`, se è nel PATH — il caso normale in sviluppo su una
+   macchina già autenticata.
+3. **niente modello**: il sistema funziona lo stesso e lo dice. Forecast,
+   scheduling e compliance sono codice; senza modello si perdono solo la prosa
+   del copilota e l'interpretazione delle note libere della testata.
+
+| Variabile | Effetto |
+|---|---|
+| `TM_LLM=fake\|cli\|api` | forza la scelta (i test usano `fake`: nessuna rete) |
+| `TM_LLM_CLI` | comando della CLI, es. `"claude -p --model haiku"` |
+| `TM_MODELLO`, `TM_EFFORT` | modello e effort del backend `api` |
+
+Una nota di misura: `claude -p` risponde in **~38 s** a una richiesta del
+copilota su questa macchina. Va bene per provare, è troppo per un composer
+sincrono — chi ci lavora a lungo punti `TM_LLM_CLI` a un modello più rapido.
+
+Dettaglio: [`docs/architettura.md`](docs/architettura.md) ·
+[`docs/security/README.md`](docs/security/README.md).
 
 ## Cosa stiamo costruendo
 
@@ -37,6 +90,22 @@ Markdown, leggibile da un umano. Tre famiglie:
 - `kb/secondo/` — memoria collettiva del negozio (ancora vuota)
 
 Mappa colori → reparti: `kb/reparti.md`.
+
+## Runtime
+
+| Pezzo | Dove | Nota |
+|---|---|---|
+| Knowledge | `timemachine/kb/` | parser e writer del markdown; il tabellone resta la storia |
+| Dominio | `timemachine/domain/` | turni, ore, saldi, catalogo chiuso, grounding gate |
+| Agenti | `timemachine/agents/` | forecast · scheduling · compliance (zero LLM) · anomaly · copilot · secondo-pv |
+| Orchestratore | `timemachine/orchestrator/` | macchina a stati, contesto con budget, coda job |
+| Adattatori | `timemachine/saldi/`, `timemachine/calendario/`, `timemachine/auth/` | Gamma, Google, identità |
+| Sicurezza | `timemachine/security/` | authz, allowlist di prompt, audit, diritti, matcher |
+| Superficie | `timemachine/vista.py`, `timemachine/web/` | dominio → tipi del catalogo → HTML |
+
+Il confine di fiducia è verificato dal codice: i moduli deterministici non
+importano gli agenti (`tests/test_confine.py`), e solo il gate `pubblica`
+scrive in `kb/turni/`.
 
 ## Come si progetta
 

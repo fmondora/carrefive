@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block titolo %}Attivazione — Le Rocce{% endblock %}
+
+{% block corpo %}
+<main class="landing">
+  {% if not valido %}
+    {# Messaggio unico: non si dice se il token è scaduto, usato o inventato. #}
+    <h1>Invito non valido</h1>
+    <section class="card"><p>{{ messaggio }}</p></section>
+  {% else %}
+    <h1>Ciao {{ nome }}</h1>
+    <p class="meta">Scegli come entrare. Le due vie valgono uguale.</p>
+
+    {% if errore %}<p class="errore">{{ errore }}</p>{% endif %}
+
+    <section class="card">
+      <div class="etichetta">uid e password</div>
+      <form method="post" action="/attiva">
+        <input type="hidden" name="t" value="{{ token }}">
+        <label class="campo">
+          <span class="etichetta">uid</span>
+          <input type="text" name="uid" value="{{ email }}" autocomplete="username">
+        </label>
+        <label class="campo">
+          <span class="etichetta">password (almeno 10 caratteri)</span>
+          <input type="password" name="password" autocomplete="new-password" required>
+        </label>
+        <label class="campo">
+          <span class="etichetta">ripeti la password</span>
+          <input type="password" name="password2" autocomplete="new-password" required>
+        </label>
+        <button class="chip chip--primaria">crea account</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="etichetta">oppure</div>
+      <a class="chip" href="/attiva/google?t={{ token }}">entra con Google</a>
+      <p class="meta">Entrare con Google è solo identità: i turni sul calendario sono un secondo consenso, da fare dopo, quando vuoi.</p>
+    </section>
+  {% endif %}
+</main>
+{% endblock %}

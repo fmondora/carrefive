@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  evals:
+    # Le evals delle spec 01–07 sono la suite: se passano, il confine di
+    # fiducia regge. `tm scan` è la parte gratis della pipeline DeepSec (`05`).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Evals (E, U, C, S, G, D, L + use case)
+        run: python -m pytest -q
+      - name: Matcher di sicurezza
+        run: python -m timemachine.cli scan --ci
