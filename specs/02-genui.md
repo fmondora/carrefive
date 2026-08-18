@@ -224,6 +224,75 @@ Skill `surface-map` su *questo* frame (persona-first) → scelta layout → `pro
 
 ---
 
+## Loop A2 (2026-08-16)
+
+A1 ha chiuso: riga `coverage-gap` = atto; approval sulla home; tabellone = settimana del ciclo; composer spento solo se l’AI è giù; Anna invariata.
+
+**A2 fissa tre contratti di superficie** (zero tipi nuovi):
+
+1. **`compliance-block` (solo `violazioni`)** è un atto come il gap. Tap → `person-shifts` della persona + `sposta-turno` sulle celle che possono sciogliere il blocco. Le `segnalazioni` restano testo.
+2. **Dopo un tap sul buco** il soggetto è *quel* buco: i candidati stanno sotto la riga scelta, non sotto le altre quattordici. La card candidato **non** usa `adesso` (è il giorno del buco + overlay/diff).
+3. `scegli-variante` solo se le varianti sono > 1.
+
+Evals da aggiungere: U-blocco-gesto (Matteo 52h → suoi turni + sposta; dopo accorcio, blocco tetto sparisce se le ore ≤ tetto). U1 e U4 restano.
+
+Varianti default 1 (aperto di sopra): **chiuso in A2** — n=1, niente chip scegli.
+
+---
+
+## Loop A3 (2026-08-17)
+
+A2 ha chiuso: blocco = atto; esito sotto la riga; `adesso` non mente; `Pubblica` torna dopo accetta se il tetto è a posto.
+
+**A3.** I buchi **non** vetoano `pubblica`. Devono però essere *detti* e *attraversabili*:
+
+1. `coverage-gap` non è un muro di 15 chip. Mostra il conteggio («N buchi · non bloccano») e **una** riga primaria (prossimo copribile). Il resto in disclosure. Tap invariato.
+2. Approval `accetta` / `pubblica` elenca il residuo («restano N buchi») *prima* del sì. Non diventa veto.
+3. Dopo `sposta-turno` confermato: non scaricare la coda sul muro. Aprire il **prossimo** buco con candidati (stesso `consulta`), o empty onesto se nessuno è copribile.
+
+Evals: U-residuo-pubblica (dopo Matteo sciolto + accetta, testo «buchi» + chip pubblica). U1 e U4 restano.
+
+---
+
+## Loop P1 (2026-08-17) — persona, non A3
+
+A3 è del manager. Questo loop è il job dipendente: **vedere e dichiarare**, non pubblicare.
+
+Il composer è il **gateway** della pipeline (`01` Loop P1), non chat-casa e non un `if` su «pianoforte».
+
+1. NL → intent chiuso → `consult` o fetch → widget. «ciao!» = `saluto` + chip. **Mai** Scheduling di default.
+2. Tap su un giorno di `person-shifts(me)` → stesso intent `preferenza` → `scheda-preview` + `salva-preferenza`. I pubblicati non si riscrivono (UC-07).
+3. Chip sul widget e nel composer = gli stessi intent. Testo libero per regole e «posso scambiare?» (proposta, non write).
+
+Fuori: marketplace swap, `coverage-gap` in casa Anna, nuovo tipo disponibilità.
+
+Evals: U-p-cella (tap gio → preview, kb invariata finché conferma). U-p-ciao (POST «ciao!» → niente turni di colleghi, composer acceso, almeno una chip utile). U1 resta.
+
+---
+
+## Loop P2 (2026-08-17)
+
+P1 chiuso: gateway + tap. **P2:** il tap su un giorno è *quel* giorno.
+
+- Vincolo dal tap: scope = ISO della cella (`Preferenza.data`). Preview: «solo il 02/07».
+- Chip nello stesso preview: «tutti i giovedì» → weekday, senza data (mestiere già di UC-07 / NL).
+- `viola()` onora `data` se c’è.
+- Enum intent: **non** si allarga. `copri` resta ombrello (ratifica delta P1).
+
+Evals: U-p-data (tap 02/07 → data 2026-07-02; gli altri gio non violati). U5 ricorrente resta.
+
+---
+
+## Loop P3 (2026-08-17)
+
+P2 chiuso: tap = data. **P3:** un vincolo di fascia è violato se il turno **si sovrappone** a quella fascia, non se *inizia* in quella fascia.
+
+`no_pomeriggio: gio` ∩ turno 7-16 = sì. Altrimenti UC-07 è una write che Scheduling non legge (E3 «onorata o spiegata» non scatta). Strumento già in `domain/ore.py`: `ore_in_fascia`.
+
+Eval: U-p-sovrapposizione (`no_pomeriggio` + 7-16 → viola True; + solo 7-12 → False). E3 resta.
+
+---
+
 ## 8. Use case
 
 Scritti da **AIUxer**. Esercitano il catalogo e il landing.

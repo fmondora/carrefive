@@ -119,6 +119,22 @@ Regole dure:
 3. Se l'AI è giù, i `person-shifts` restano sull'ultimo pubblicato; niente nuova bozza. Degrado onesto. `[AIUxer P-D]`
 4. I comandi di ciclo arrivano dal Copilot (traduzione NL) o dalla superficie (chip). L'orchestratore non interpreta il linguaggio.
 
+### Loop P1 — Copilot = gateway (2026-08-17)
+
+Il Copilot **non** è un router a regex. È l’unico ingresso parlato alla pipeline (`consult` / comando di ciclo). Classifica l’intent in un **enum chiuso** (P-A), poi invoca l’agente giusto. L’enum ⊆ chip e tool già in catalogo:
+
+`preferenza` · `turni_miei` · `saldi` · `copri` · `comando_ciclo` · `saluto` · `sconosciuto`
+
+`copri` è l’ombrello delle **domande di dominio sul piano** (scheduling, e sotto-router det verso compliance / secondo-pv su parole note). Non si allarga l’enum ai nomi degli agenti.
+
+- `saluto` / `sconosciuto`: `copilot-turn` onesto + chip. **Vietato** il default `consult(scheduling)`.
+- Dipendente: tool allowlist = sé (turni, saldi, preview scheda). Zero `person-shifts` di colleghi, zero `genera-bozza`.
+- Manager: `consult` forecast / scheduling / compliance / secondo come `01` §4.3.
+- Write: solo chip. Il gateway propone.
+- AI giù: chip e celle restano; niente 200 finto di prosa.
+
+E5 resta. Aggiungere E10: «ciao!» da Anna → nessun consult scheduling, composer acceso, chip utili.
+
 `carica_contesto` è codice, non un agente. Seleziona:
 
 - tutte le `kb/persone/*.md` del PV
@@ -197,6 +213,20 @@ Prima di costruire gli agenti, questi casi. Dataset iniziale = le due settimane 
 | E8 | Tipo / persona / mansione sconosciuti in output LLM | drop + motivo, non render, non persist |
 
 Canary online: tasso accettazione, violazioni pubblicate (=0), costo/settimana, job falliti.
+
+| # | Caso | Gate |
+|---|---|---|
+| E9 **A2** | Bozza eredita tetto rotto (Matteo 52h dal template) | `pubblicabile: false`; tap sulla violazione apre `person-shifts` di Matteo + `sposta-turno`; dopo uno spezzone in meno, se il tetto torna sotto, `pubblica` può comparire (dopo accetta) |
+
+---
+
+## Loop A2 (2026-08-16)
+
+Scheduling parte dalla settimana precedente (principio 11). Se quella settimana era già illegale, la bozza **nasce** non pubblicabile. Non è un bug di Compliance: è il template.
+
+**Contratto A2.** Una violazione che *blocca* è un atto, come un buco: la persona flaggata è il soggetto (UC-03 passo 5). L’AI non accorcia Matteo da sola (già in `scheduling.py`). L’umano sì, con `sposta-turno` dalla riga del blocco. Le segnalazioni («da guardare») non aprono il gesto.
+
+`candidati_per_gap(piano, data, fascia, reparto, schede)` — la fascia è obbligatoria (layer 2). Vista non importa `agents/`.
 
 ---
 
